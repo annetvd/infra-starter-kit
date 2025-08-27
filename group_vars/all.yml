@@ -1,0 +1,38 @@
+---
+# ====================================================
+# General system variables
+# ====================================================
+php_version: 8.3
+web_domain: example.com
+
+# ====================================================
+# Web services
+# ====================================================
+caddy_proxy:
+  name: caddy
+  user: caddy
+  group: caddy
+  fail2ban_needs_access: true
+  log_path: /var/log/caddy
+  csp_reports_log_path: /var/www/reports/csp_reports
+
+portfolio_service:
+  name: portfolio_api
+  user: portfolio_api
+  group: portfolio_api
+  path: /var/www/portfolio
+  main_app_file: app.js
+  nvm_version: v0.40.3
+  node_version: "lts/*"
+  app_env: production
+  fail2ban_needs_access: true
+  port: 3000
+  log_path: /var/log/portfolio_api
+
+apache_service:
+  name: apache2
+  user: www-data
+  group: www-data
+  path: /var/www/html
+  fail2ban_needs_access: false
+  port: 8080

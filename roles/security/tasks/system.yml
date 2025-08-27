@@ -1,0 +1,148 @@
+---
+- name: Manage privileged user credentials and secure .ssh directory
+  block:
+    - name: Create user {{ system_user }}
+      ansible.builtin.user:
+        name: "{{ system_user }}"
+        shell: /bin/bash
+        groups: sudo
+        append: yes
+      when: is_codespace
+      tags:
+        - users
+
+    - name: Check if {{ system_user }} password is set
+      ansible.builtin.shell: "passwd --status {{ system_user }} | awk '{ print $2 }'"
+      register: system_user_password_status
+      changed_when: false
+      tags:
+        - users
+
+    - name: Set {{ system_user }} password
+      ansible.builtin.user:
+        name: "{{ system_user }}"
+        password: "{{ system_user_pass | password_hash('sha512') }}"
+      no_log: true
+      when: system_user_password_status.stdout == "L"
+      tags:
+        - users
+        - password
+
+    - name: Ensure .ssh directory exists for {{ system_user }}
+      ansible.builtin.file:
+        path: "/home/{{ system_user }}/.ssh"
+        state: directory
+        owner: "{{ system_user }}"
+        group: "{{ system_user }}"
+        mode: "0700"
+      tags:
+        - users
+        - ssh
+
+    - name: Add SSH public key for {{ system_user }}
+      ansible.builtin.authorized_key:
+        user: "{{ system_user }}"
+        key: "{{ system_user_ssh_public_key }}"
+        state: present
+      no_log: true
+      when: is_codespace
+      tags:
+        - users
+        - ssh
+
+    - name: Set permissions on root .ssh folder
+      ansible.builtin.file:
+        path: "/root/.ssh"
+        mode: "0700"
+        recurse: yes
+        state: directory
+      tags:
+        - root
+        - ssh
+
+    - name: Lock the root user's password
+      ansible.builtin.user:
+        name: root
+        password_lock: yes
+
+    - name: SUCCESS -> Privileged users and directories secured successfully
+      ansible.builtin.debug:
+        msg: "Privileged users and directories secured successfully."
+      tags:
+        - root
+        - password
+        - users
+        - ssh
+        - success
+        - success:stage
+
+  rescue:
+    - name: ERROR -> Error securing privileged users and related directories
+      ansible.builtin.fail:
+        msg: "An unexpected error occurred during system security configuration. Check the logs before proceeding."
+      tags:
+        - root
+        - password
+        - users
+        - ssh
+
+  tags:
+    - privileged_users
+
+- name: Harden SSH configuration
+  block:
+    - name: Backup sshd_config (only once)
+      ansible.builtin.copy:
+        src: /etc/ssh/sshd_config
+        dest: /etc/ssh/sshd_config.bak
+        remote_src: true
+        force: false
+
+    - name: Disable SSH password authentication
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PasswordAuthentication'
+        line: 'PasswordAuthentication no'
+      notify:
+        - restart_ssh_vm
+        - restart_ssh_codespace
+      
+    - name: Disable root login via SSH
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PermitRootLogin'
+        line: 'PermitRootLogin no'
+      notify:
+        - restart_ssh_vm
+        - restart_ssh_codespace
+             
+    - name: Allow only {{ system_user }} to SSH
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?AllowUsers'
+        line: 'AllowUsers {{ system_user }}'
+      notify:
+        - restart_ssh_vm
+        - restart_ssh_codespace
+      tags:
+        - users
+
+    - name: SUCCESS -> SSH configuration hardened successfully
+      ansible.builtin.debug:
+        msg: "SSH configuration hardened successfully."
+      tags:
+        - users
+        - success
+        - success:stage
+
+  rescue:
+    - name: ERROR -> Failed to harden SSH configuration
+      ansible.builtin.fail:
+        msg: "An unexpected error occurred while hardening the SSH configuration. Check the logs before proceeding."
+      tags:
+        - users
+      
+  tags:
+    - ssh
+    - config
+    - ssh_hardening

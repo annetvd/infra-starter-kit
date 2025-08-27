@@ -1,0 +1,25 @@
+---
+- name: Disable display_errors and expose_php in php.ini
+  ansible.builtin.lineinfile:
+    path: "/etc/php/{{ php_version }}/apache2/php.ini"
+    regexp: '^{{ item.key }}'
+    line: "{{ item.key }} = {{ item.value }}"
+    backup: true
+  loop:
+    - { key: 'display_errors', value: 'Off' }
+    - { key: 'expose_php', value: 'Off' }
+  loop_control:
+    label: "{{ item.key }}: {{ item.value }}"
+  notify:
+    - restart_apache_vm
+    - restart_apache_codespace
+
+- name: Disable dangerous PHP functions except exec
+  ansible.builtin.lineinfile:
+    path: "/etc/php/{{ php_version }}/apache2/php.ini"
+    regexp: '^disable_functions\s*='
+    line: 'disable_functions = shell_exec,system,passthru,proc_open,popen,curl_exec,curl_multi_exec,parse_ini_file,show_source'
+    backup: true
+  notify:
+    - restart_apache_vm
+    - restart_apache_codespace

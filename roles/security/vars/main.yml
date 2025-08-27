@@ -1,0 +1,304 @@
+---
+# ====================================================
+# Postfix
+# ====================================================
+postfix_myorigin: /etc/mailname
+postfix_mydestination: "$myhostname, $mydomain, localhost"
+
+# ====================================================
+# Cloudflare Tunnel
+# ====================================================
+cloudflared_path: /etc/cloudflared
+cloudflared_binary_path: /usr/local/bin/cloudflared
+cloudflared_log_path: /var/log/cloudflared
+
+# ====================================================
+# Fail2ban
+# ====================================================
+fail2ban_filters_path: /etc/fail2ban/filter.d
+fail2ban_filters:
+  - name: mysqld-auth
+    dest_file: mysqld-auth.conf
+    content: |
+      [Definition]
+      failregex = Access denied for user .* from <HOST>
+      ignoreregex =
+  - name: apache-badbots
+    dest_file: apache-badbots.conf
+    content: |
+      [Definition]
+      failregex = ^<HOST> -.*"(GET|POST|HEAD).+" 200 .*"(?:acunetix|sqlmap|nikto|libwww-perl|curl|python-requests|nmap|masscan|fuzzer|badbot|wget|HTTrack|httpclient|harvest|scrapy|python|scan|bot|crawler).*"$
+      ignoreregex =
+  - name: php-login
+    dest_file: php-login.conf
+    content: |
+      [Definition]
+      failregex = <HOST> -.*"(POST|GET) /.*(login|signin|auth)\.php.* HTTP/.*" (401|403|404)
+      ignoreregex =
+  - name: portfolio_api
+    dest_file: portfolio_api.conf
+    content: |
+      [Definition]
+      failregex = ^.*\[(?:ProbingSuspiciousRoute|DisallowedMethod|AuthFailed401|AuthFailed403|SQLInjectionAttempt|XSSAttempt|TokenTampering)\].*from <HOST>.*$
+      ignoreregex =
+  - name: caddy-badbots
+    dest_file: caddy-badbots.conf
+    content: |
+      [Definition]
+      failregex = ^<HOST> -.*"(GET|POST|HEAD).+" 200 .*"(?:acunetix|sqlmap|nikto|libwww-perl|curl|python-requests|nmap|masscan|fuzzer|badbot|wget|HTTrack|httpclient|harvest|scrapy|python|scan|bot|crawler).*"$
+      ignoreregex =
+
+fail2ban_jails_count: 6
+fail2ban_jails:
+  - name: sshd
+    jail_name: sshd
+    enabled: true
+    port: ssh
+    maxretry: 4
+    filter: sshd
+  - name: mysql
+    jail_name: mysqld-auth
+    enabled: true
+    port: 3306
+    maxretry: 3
+    filter: mysqld-auth
+  - name: apache2
+    jail_name: apache-badbots
+    enabled: true
+    maxretry: 1
+    findtime: 3600
+    bantime: 43200
+    filter: apache-badbots
+  - name: php-fpm
+    jail_name: php-login
+    enabled: true
+    port: http,https
+    maxretry: 5
+    findtime: 600
+    filter: php-login
+  - name: portfolio_api
+    jail_name: portfolio_api
+    enabled: true
+    maxretry: 1
+    bandtime: 86400
+    filter: portfolio_api
+  - name: caddy
+    jail_name: caddy-badbots
+    enabled: true
+    port: http,https
+    maxretry: 2
+    findtime: 3600
+    bantime: 86400
+    filter: caddy-badbots
+
+# ====================================================
+# Auditd
+# ====================================================
+auditd_manage_rules: true
+auditd_rules:
+  # Execve auditd rule
+  - syscall: execve
+    action: always
+    filter: exit
+    arch: b64
+    filters:
+      - auid>=1000
+      - auid!=4294967295
+    keyname: exec-watches
+  # Critical system files
+  - file: /etc/passwd
+    permissions: [write, attribute_change, read]
+    keyname: passwd-watch
+  - file: /etc/shadow
+    permissions: [read, write]
+    keyname: shadow-watch
+  - file: /etc/group
+    permissions: [write, attribute_change, read]
+    keyname: group-watch
+  - file: /etc/gshadow
+    permissions: [write, attribute_change, read]
+    keyname: gshadow-watch
+  - file: /etc/sudoers
+    permissions: [write]
+    keyname: sudoers-watch
+  # SSH
+  - file: /etc/ssh/sshd_config
+    permissions: [write, attribute_change, read]
+    keyname: sshd-config-watch
+  # Firewall
+  - file: /var/log/ufw.log
+    permissions: [write]
+    keyname: ufw-log
+  # Fail2ban
+  - file: /var/log/fail2ban.log
+    permissions: [write]
+    keyname: fail2ban-log
+  # Auditd log
+  - file: /var/log/audit/audit.log
+    permissions: [write]
+    keyname: auditd-log
+  # mysql
+  - file: /usr/bin/mysql
+    permissions: [execute]
+    keyname: mysql-access
+  - file: /var/run/mysqld/mysqld.sock
+    permissions: [read, write]
+    keyname: mysql-socket
+  - file: /etc/mysql/my.cnf
+    permissions: [write, attribute_change, read]
+    keyname: mysql-cnf-watch
+  # apache2
+  - file: /var/log/apache2/
+    permissions: [write]
+    keyname: apache-log
+  - file: /etc/apache2/apache2.conf
+    permissions: [write, attribute_change]
+    keyname: apache-config
+  - file: /etc/apache2/sites-available/
+    permissions: [write, attribute_change, read]
+    keyname: apache-sites
+  # Apache logs
+  - file: /var/log/apache2/access.log
+    permissions: [write]
+    keyname: apache-access-log
+  - file: /var/log/apache2/error.log
+    permissions: [write]
+    keyname: apache-error-log
+  # PHP-FPM
+  - file: /etc/php/*/fpm/php.ini
+    permissions: [write, attribute_change, read]
+    keyname: php-fpm-ini
+  - file: /etc/php/*/cli/php.ini
+    permissions: [write, attribute_change, read]
+    keyname: php-cli-ini
+  - file: /etc/php/*/fpm/pool.d/www.conf
+    permissions: [write, attribute_change, read]
+    keyname: php-fpm-pool
+  # PHP-FPM logs
+  - file: /var/log/php*-fpm.log
+    permissions: [write]
+    keyname: php-fpm-log
+  # Web applications logs
+  - file: /var/log/portfolio_api/
+    permissions: [write]
+    keyname: portfolio-logs
+  # Caddy configuration
+  - file: /etc/caddy/Caddyfile
+    permissions: [write, attribute_change, read]
+    keyname: caddy-config-watch
+  # Caddy logs
+  - file: /var/log/caddy/*-access.log
+    permissions: [write]
+    keyname: caddy-access
+  - file: /var/www/reports/csp_reports/csp_report.log
+    permissions: [write]
+    keyname: caddy-reports
+  # Cloudflared
+  - file: /usr/local/bin/cloudflared
+    permissions: [execute]
+    keyname: cloudflared-exec
+  - file: /etc/cloudflared/config.yml
+    permissions: [write, attribute_change, read]
+    keyname: cloudflared-config
+  - file: /var/log/cloudflared.log
+    permissions: [write]
+    keyname: cloudflared-logs
+
+# ====================================================
+# Logrotate
+# ====================================================
+
+# Note: The tags within the 'all_logrotate_service_tags' variable are centralized here to clearly
+# show its relationship with 'log_files_services'. While it could be placed in
+# tasks/logrotate.yml, this approach simplifies the management of logrotate tags.
+
+all_logrotate_service_tags:
+  - ssh
+  - ufw
+  - postfix
+  - fail2ban
+  - auditd
+  - mysql
+  - apache
+  - php
+  - php-fpm
+  - portfolio_api
+  - node_api
+  - caddy_reports
+  - caddy
+  - unattended-upgrades
+  - cloudflare_tunnel
+
+# AppArmor does not generate a dedicated log for logrotate.
+# Adjust php_fpm_logrotate.conf if using specific PHP-FPM pool logs.
+log_files_services:
+  - name: sshd
+    log_path: /var/log/auth.log
+    log_check_type: directory # Directory check for Codespace (no syslog). Change to file check on VM.
+    src_file: sshd_logrotate.conf
+    is_template: false
+  - name: ufw
+    log_path: /var/log/ufw.log
+    log_check_type: directory
+    src_file: ufw_logrotate.conf
+    is_template: false
+  - name: postfix
+    log_path: /var/log/mail.log
+    log_check_type: directory # Directory check for Codespace (no syslog). Change to file check on VM.
+    src_file: postfix_logrotate.conf
+    is_template: false
+  - name: fail2ban
+    log_path: /var/log/fail2ban.log
+    log_check_type: file
+    src_file: fail2ban_logrotate.conf
+    is_template: false
+  - name: auditd
+    log_path: /var/log/audit/audit.log
+    log_check_type: file
+    src_file: auditd_logrotate.conf
+    is_template: false
+  - name: mysql
+    log_path: /var/log/mysql/error.log
+    log_check_type: file
+    src_file: mysql_logrotate.conf.j2
+    is_template: true
+  - name: apache2
+    log_path: /var/log/apache2/access.log
+    log_check_type: file
+    src_file: apache_logrotate.conf
+    is_template: false
+  - name: php-fpm
+    log_path: "/var/log/php*-fpm.log"
+    log_check_type: directory
+    src_file: php_fpm_logrotate.conf
+    is_template: false
+  - name: portfolio_api
+    log_path: /var/log/portfolio_api/combined.log
+    log_check_type: file
+    src_file: node_api_logrotate.conf.j2
+    is_template: true
+  - name: portfolio_api_update
+    log_path: /var/log/portfolio_api/logs_update
+    log_check_type: directory
+    src_file: node_update_logrotate.conf.j2
+    is_template: true
+  - name: caddy_reports
+    log_path: /var/www/reports/csp_reports/csp_report.log
+    log_check_type: directory
+    src_file: caddy_reports_logrotate.conf.j2
+    is_template: true
+  - name: caddy
+    log_path: "/var/log/caddy/*-access.log"
+    log_check_type: directory
+    src_file: caddy_logrotate.conf
+    is_template: false
+  - name: unattended-upgrades
+    log_path: /var/log/unattended-upgrades/
+    log_check_type: directory
+    src_file: unattended-upgrades_logrotate.conf
+    is_template: false
+  - name: cloudflare_tunnel
+    log_path: /var/log/cloudflared/portfolio-tunnel/logs
+    log_check_type: directory
+    src_file: cloudflare_tunnel_logrotate.conf.j2
+    is_template: true

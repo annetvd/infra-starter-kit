@@ -1,0 +1,89 @@
+---
+- name: Install and enable unattended-upgrades service
+  block:
+    - name: Install unattended-upgrades package
+      ansible.builtin.apt:
+        name: unattended-upgrades
+        state: present
+        update_cache: yes
+      tags:
+        - install
+
+    - name: Enable and start unattended-upgrades service (VM)
+      ansible.builtin.systemd:
+        name: unattended-upgrades
+        enabled: true
+        state: started
+      when: not is_codespace
+
+    - name: Start unattended-upgrades service (Codespace)
+      ansible.builtin.command: "service unattended-upgrades start"
+      when: is_codespace
+      changed_when: false
+
+    - name: SUCCESS -> unattended-upgrades installed and service started successfully
+      ansible.builtin.debug:
+        msg: "unattended-upgrades installed and service started successfully."
+      tags:
+        - success
+        - success:stage
+  
+  rescue:
+    - name: ERROR -> Failed to install or start unattended-upgrades service
+      ansible.builtin.fail:
+        msg: "Could not install or start unattended-upgrades service. Check package installation, service status, or permissions."
+
+  tags:
+    - unattended_upgrades_install
+
+- name: Configure unattended-upgrades automatic updates and security settings
+  block:
+    - name: Enable automatic updates
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/20auto-upgrades
+        content: |
+          APT::Periodic::Update-Package-Lists "1";
+          APT::Periodic::Unattended-Upgrade "1";
+      notify:
+        - restart_unattended-upgrades_vm
+        - restart_unattended-upgrades_codespace
+      tags:
+        - unattended_upgrades_enable
+    
+    # Note: Customize the content of this copy task according to project needs and how
+    # the packages were installed with apt (e.g., using a GPG key and official repository).
+
+    - name: Configure unattended-upgrades for system security and critical official apps
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/50unattended-upgrades
+        content: |
+          Unattended-Upgrade::Allowed-Origins {
+            "${distro_id}:${distro_codename}-security";
+
+            // Critical apps installed from official repositories
+            "cloudsmith/caddy/stable";
+            "cloudflared";
+          };
+          Unattended-Upgrade::Automatic-Reboot "true";
+          Unattended-Upgrade::SyslogEnable "true";
+          Unattended-Upgrade::Mail {{ security_email }};
+      notify:
+        - restart_unattended-upgrades_vm
+        - restart_unattended-upgrades_codespace
+      tags:
+        - unattended_upgrades_policy
+
+    - name: SUCCESS -> unattended-upgrades automatic updates configured successfully
+      ansible.builtin.debug:
+        msg: "unattended-upgrades automatic updates configured successfully."
+      tags:
+        - success
+        - success:stage
+
+  rescue:
+    - name: ERROR -> Failed to configure unattended-upgrades automatic updates
+      ansible.builtin.fail:
+        msg: "Could not configure unattended-upgrades automatic updates. Check logs for more information."
+  
+  tags:
+    - unattended_upgrades_config

@@ -1,0 +1,225 @@
+---
+- name: Install and initialize Apache, PHP, and ModSecurity Base
+  block:
+    - name: Install Apache and PHP
+      ansible.builtin.apt:
+        name:
+          - apache2
+          - php
+          - php-mysql
+          - libapache2-mod-php
+        state: present
+        update_cache: true
+      tags:
+        - install
+        - php
+
+    - name: Enable and start apache2 (VM)
+      ansible.builtin.systemd:
+        name: apache2
+        enabled: true
+        state: started
+      when: not is_codespace
+    
+    - name: Start apache2 (Codespace)
+      ansible.builtin.command: "service apache2 start"
+      when: is_codespace
+      changed_when: false
+          
+    - name: Enable PHP module in Apache
+      ansible.builtin.apache2_module:
+        state: present
+        name: "php{{ php_version }}"
+      tags:
+        - php
+
+    - name: SUCCESS -> Apache, PHP, and ModSecurity Base installed and initialized successfully
+      ansible.builtin.debug:
+        msg: "Apache, PHP, and ModSecurity Base installed and initialized successfully."
+      tags:
+        - php
+        - success
+        - success:stage
+
+  rescue:
+    - name: ERROR -> Base installation and initialization failed
+      ansible.builtin.fail:
+        msg: "An error occurred during the base installation of Apache, PHP, or ModSecurity. Review logs for more details."
+      tags:
+        - php
+
+  tags:
+    - apache_php_install
+
+- name: Configure ModSecurity and OWASP CRS
+  block:
+    - name: Install ModSecurity and OWASP CRS
+      ansible.builtin.apt:
+        name:
+          - libapache2-mod-security2
+          - modsecurity-crs
+        state: present
+        update_cache: true
+      tags:
+        - install
+
+    - name: Enable security2 module in Apache
+      ansible.builtin.command: "a2enmod security2"
+      args:
+        creates: "/etc/apache2/mods-enabled/security2.load"
+      notify:
+        - restart_apache_vm
+        - restart_apache_codespace
+      tags:
+        - crs_config
+
+    - name: Link OWASP CRS rules directory
+      ansible.builtin.file:
+        src: "/usr/share/modsecurity-crs/rules"
+        dest: "/etc/modsecurity/rules"
+        state: link
+        force: true
+      tags:
+        - crs
+
+    - name: Check if ModSecurity config exists
+      ansible.builtin.stat:
+        path: /etc/modsecurity/modsecurity.conf
+      register: modsec_file
+      tags:
+        - crs
+        - crs_config
+
+    - name: Create ModSecurity config from recommended file if missing
+      ansible.builtin.copy:
+        src: "/etc/modsecurity/modsecurity.conf-recommended"
+        dest: "/etc/modsecurity/modsecurity.conf"
+        remote_src: true
+      when: not modsec_file.stat.exists
+      tags:
+        - crs
+        - crs_config
+
+    - name: Configure ModSecurity to blocking mode (SecRuleEngine On)
+      ansible.builtin.replace:
+        path: "/etc/modsecurity/modsecurity.conf"
+        regexp: "^\\s*SecRuleEngine\\s+(DetectionOnly|Off)"
+        replace: "SecRuleEngine On"
+      notify:
+        - restart_apache_vm
+        - restart_apache_codespace
+      tags:
+        - crs
+        - crs_config
+
+    # Note: This is a sensitive task. It's not truly idempotent because it overwrites the entire 
+    # `crs-setup.conf` file, potentially deleting any manual configurations. To safely manage this, use the
+    # `modsecurity_crs_overwrite_config` variable in your `defaults/main.yml` file to enable or disable this task.
+    
+    - name: Configure OWASP CRS with custom template
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/crs-setup.conf.j2"
+        dest: "/etc/modsecurity/crs-setup.conf"
+        owner: root
+        group: root
+        mode: '0644'
+      notify:
+        - restart_apache_vm
+        - restart_apache_codespace
+      when: modsecurity_crs_overwrite_config
+      tags:
+        - crs
+        - crs_config
+
+    - name: SUCCESS -> ModSecurity and OWASP CRS configured successfully
+      ansible.builtin.debug:
+        msg: "ModSecurity and OWASP CRS configured successfully."
+      tags:
+        - crs
+        - crs_config
+        - success
+        - success:stage
+  
+  rescue:
+    - name: ERROR -> ModSecurity configuration failed
+      ansible.builtin.fail:
+        msg: "An error occurred during ModSecurity and OWASP CRS configuration. Please check the logs for details."
+      tags:
+        - crs
+        - crs_config
+
+  tags:
+    - modsecurity
+    - modsecurity_install_setup
+
+- name: Apply Apache hardening configurations
+  block:
+    - name: Include Apache hardening tasks
+      ansible.builtin.import_tasks: apache_hardening.yml
+
+    - name: SUCCESS -> Basic Apache hardening configuration applied successfully
+      ansible.builtin.debug:
+        msg: "Basic Apache hardening configuration applied successfully."
+      tags:
+        - success
+        - success:stage
+  
+  rescue:
+    - name: ERROR -> Apache hardening configuration failed
+      ansible.builtin.fail:
+        msg: "An error occurred while applying Apache hardening. Please check the 'apache_hardening.yml' tasks."
+
+  tags:
+    - apache_hardening
+    - htaccess
+
+- name: Apply PHP hardening configurations
+  block:
+    - name: Include PHP hardening tasks
+      ansible.builtin.import_tasks: php_hardening.yml
+
+    - name: SUCCESS -> Basic PHP hardening configuration applied successfully
+      ansible.builtin.debug:
+        msg: "Basic PHP hardening configuration applied successfully."
+      tags:
+        - success
+        - success:stage
+  
+  rescue:
+    - name: ERROR -> PHP hardening configuration failed
+      ansible.builtin.fail:
+        msg: "An error occurred while applying PHP hardening. Please check the 'php_hardening.yml' tasks."
+  
+  tags:
+    - php_hardening
+    - php
+
+- name: Apply cleanup tasks
+  block:
+    - name: Remove default Apache index page
+      ansible.builtin.file:
+        path: "/var/www/html/index.html"
+        state: absent
+      
+    - name: Remove default Apache site example link
+      ansible.builtin.file:
+        path: "/etc/apache2/sites-enabled/000-default.conf"
+        state: absent
+      notify:
+        - restart_apache_vm
+        - restart_apache_codespace
+      
+    - name: SUCCESS -> Apache defaults removed successfully
+      ansible.builtin.debug:
+        msg: "Apache defaults removed successfully."
+      tags:
+        - success
+        - success:stage
+        
+  rescue:
+    - name: ERROR -> Final cleanup tasks failed
+      ansible.builtin.fail:
+        msg: "Some final cleanup tasks failed. Check logs for more information."
+      
+  tags:
+    - apache_cleanup

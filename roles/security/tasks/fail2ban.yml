@@ -1,0 +1,138 @@
+---
+- name: Install, configure user access, and start Fail2ban
+  block:
+    - name: Install Fail2ban package
+      ansible.builtin.apt:
+        name: fail2ban
+        state: present
+        update_cache: true
+      tags:
+        - install
+
+    - name: Add fail2ban user to service group to allow log access
+      ansible.builtin.user:
+        name: fail2ban
+        groups: "{{ item.group }}"
+        append: yes
+      loop: "{{ fail2ban_web_services }}"
+      loop_control:
+        label: "Group: {{ item.group }}"
+      when: item.fail2ban_needs_access | bool
+      tags:
+        - fail2ban-permissions
+
+    - name: Enable and start Fail2ban service (VM)
+      ansible.builtin.systemd:
+        name: fail2ban
+        enabled: true
+        state: started
+      when: not is_codespace
+
+    - name: Verify if fail2ban is running (Codespace)
+      ansible.builtin.command: service fail2ban status
+      register: fail2ban_running
+      ignore_errors: true
+      changed_when: false
+      when: is_codespace
+
+    - name: Start fail2ban service (Codespace)
+      ansible.builtin.command: "service fail2ban start"
+      when: is_codespace and fail2ban_running.rc != 0
+
+    - name: SUCCESS -> Fail2Ban is installed and running
+      ansible.builtin.debug:
+        msg: "Fail2Ban installation and startup successful."
+      
+  rescue:
+    - name: ERROR -> Fail2Ban installation or startup failed
+      ansible.builtin.fail:
+        msg: "Fail2Ban installation or service startup failed. Check package manager output and service logs."
+        
+  tags:
+    - fail2ban_install
+
+- name: Configure Fail2Ban filters
+  block:
+    - name: Ensure Fail2Ban filter directory exists
+      ansible.builtin.file:
+        path: /etc/fail2ban/filter.d
+        state: directory
+        mode: '0755'
+
+    - name: Create fail2ban filter
+      ansible.builtin.copy:
+        dest: "{{ fail2ban_filters_path }}/{{ item.dest_file }}"
+        content: "{{ item.content }}"
+        owner: root
+        group: root
+        mode: '0644'
+      loop: "{{ fail2ban_filters }}"
+      loop_control:
+        label: "{{ item.name }} ({{ item.dest_file }})"
+      
+    - name: SUCCESS -> Custom Fail2Ban filters deployed successfully
+      ansible.builtin.debug:
+        msg: "Custom Fail2Ban filters deployed successfully."
+      tags:
+        - success
+        - success:stage
+      
+  rescue:
+    - name: ERROR -> Failed to deploy one or more Fail2Ban custom filters
+      ansible.builtin.fail:
+        msg: "Could not deploy one or more custom Fail2Ban filters. Please check permissions or syntax."
+  
+  tags:
+    - fail2ban_filters
+
+- name: Configure Fail2Ban jails
+  block:
+    - name: Apply Fail2Ban jail definitions
+      ansible.builtin.import_tasks: fail2ban_jails.yml
+
+    - name: SUCCESS -> Fail2Ban jails were successfully configured and activated
+      ansible.builtin.debug:
+        msg: "Fail2Ban jails were successfully configured and activated."
+      tags:
+        - verification
+        - test
+        - success
+        - success:stage
+
+  rescue:
+    - name: ERROR -> Failed to activate all configured jails
+      ansible.builtin.fail:
+        msg: "One or more Fail2Ban jails failed to activate correctly."
+      when: 
+        - (jail_count | int | default(0)) != fail2ban_jails_count
+      tags:
+        - verification
+        - test
+
+    - name: ERROR -> Failed to send test email via Fail2Ban ssh jail
+      ansible.builtin.fail:
+        msg: "The test email via the Fail2Ban ssh jail could not be sent."
+      when: 
+        - (fail2ban_test_email.rc | default(0)) != 0
+      tags:
+        - verification
+        - test
+
+    - name: ERROR -> Verification email not found in /var/mail/codespace
+      ansible.builtin.fail:
+        msg: "The verification email was not found in /var/mail/codespace."
+      when: 
+        - (mail_check.rc | default(0)) != 0
+      tags:
+        - verification
+        - test
+
+    - name: ERROR -> Failed to apply fail2ban security configuration
+      ansible.builtin.fail:
+        msg: "An unexpected error occurred while applying fail2ban security configuration. Check the logs before proceeding."
+      tags:
+        - verification
+        - test
+
+  tags:
+    - fail2ban_jails

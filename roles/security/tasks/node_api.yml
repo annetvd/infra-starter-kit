@@ -1,0 +1,193 @@
+---
+- name: Configure {{ portfolio_service.name }} user and directories
+  block:
+    # Note: This group and user are configured with minimal privileges to run the service. The goal is to contain the
+    # application within its directory, preventing a potential security breach from compromising the entire system.
+    # '/bin/false' is used for security; it prevents this user from having interactive shell access.
+
+    - name: Create dedicated group for Node.js API
+      ansible.builtin.group:
+        name: "{{ portfolio_service.group }}"
+        state: present
+      tags:
+        - user_services
+
+    - name: Create dedicated user
+      ansible.builtin.user:
+        name: "{{ portfolio_service.user }}"
+        group: "{{ portfolio_service.group }}"
+        state: present
+        system: true
+        create_home: false
+        shell: /bin/false
+      tags:
+        - user_services
+
+    - name: Create application directory and set initial permissions
+      ansible.builtin.file:
+        path: "{{ portfolio_service.path }}"
+        state: directory
+        owner: "{{ portfolio_service.user }}"
+        group: "{{ portfolio_service.group }}"
+        mode: '0700'
+      tags:
+        - permissions
+
+    - name: Create the application log directory
+      ansible.builtin.file:
+        path: "{{ portfolio_service.log_path }}"
+        state: directory
+        owner: "{{ portfolio_service.user }}"
+        group: "{{ portfolio_service.group }}"
+        mode: '0750'
+      tags:
+        - permissions
+        - logrotate
+
+    - name: Ensure log file exists with correct permissions
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: touch
+        owner: "{{ portfolio_service.user }}"
+        group: "{{ portfolio_service.group }}"
+        mode: '0640'
+      loop:
+        - "{{ portfolio_service.log_path }}/combined.log"
+        - "{{ portfolio_service.log_path }}/{{ portfolio_service.name }}.log"
+      tags:
+        - permissions
+        - logrotate
+
+    - name: SUCCESS -> {{ portfolio_service.name }} user and directories configured successfully
+      ansible.builtin.debug:
+        msg: "{{ portfolio_service.name }} user and directories configured successfully."
+      tags:
+        - permissions
+        - logrotate
+        - user_services
+        - success
+        - success:stage
+      
+  rescue:
+    - name: ERROR -> Failed to configure {{ portfolio_service.name }} user or directories
+      ansible.builtin.fail:
+        msg: "Failed to configure the {{ portfolio_service.name }} user or directories. Please check the logs for details."
+      tags:
+        - permissions
+        - logrotate
+        - user_services
+
+  tags:
+    - node_env_setup
+
+- name: Install Node.js with nvm
+  block:
+    - name: Ensure nvm dependencies are installed
+      ansible.builtin.apt:
+        name: 
+          - build-essential
+          - curl
+        state: present
+        update_cache: true
+      tags:
+        - dependencies
+
+    - name: Download and install nvm as root
+      ansible.builtin.shell: |
+        export NVM_DIR="{{ portfolio_service.path }}/.nvm"
+        mkdir -p "$NVM_DIR"
+        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/{{ portfolio_service.nvm_version }}/install.sh | bash
+      args:
+        creates: "{{ portfolio_service.path }}/.nvm/nvm.sh"
+
+    - name: Install Node.js LTS version as root
+      ansible.builtin.shell: |
+        export NVM_DIR="{{ portfolio_service.path }}/.nvm"
+        source "$NVM_DIR/nvm.sh"
+        nvm install {{ portfolio_service.node_version }}
+        nvm alias default {{ portfolio_service.node_version }}
+      args:
+        executable: /bin/bash
+        creates: "{{ portfolio_service.path }}/.nvm/versions/node"
+
+    - name: Change ownership of NVM directory
+      ansible.builtin.file:
+        path: "{{ portfolio_service.path }}/.nvm"
+        owner: "{{ portfolio_service.user }}"
+        group: "{{ portfolio_service.group }}"
+        recurse: yes
+
+    - name: SUCCESS -> Node.js and packages installed for {{ portfolio_service.name }}
+      ansible.builtin.debug:
+        msg: "{{ portfolio_service.name }} packages installed successfully."
+      tags:
+        - success
+        - success:stage
+  
+  rescue:
+    - name: ERROR -> Node.js and packages installation failed for {{ portfolio_service.name }}
+      ansible.builtin.fail:
+        msg: "Failed to install {{ portfolio_service.name }} packages. Check package manager or service logs."
+  
+  tags:
+    - node_install
+    - install
+    - nvm
+
+- name: Setup Node.js auto-update environment
+  block:
+    - name: Ensure scripts and logs dirs exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ portfolio_service.user }}"
+        group: "{{ portfolio_service.group }}"
+        mode: "0700"
+      loop:
+        - "/opt/{{ portfolio_service.name }}/scripts"
+        - "{{ portfolio_service.log_path }}/logs_update"
+      tags:
+        - node_auto_update_dirs
+
+    - name: Install Node auto-update script
+      ansible.builtin.template:
+        src: "update_node.sh.j2"
+        dest: "/opt/{{ portfolio_service.name }}/scripts/update_node.sh"
+        owner: "{{ portfolio_service.user }}"
+        group: "{{ portfolio_service.group }}"
+        mode: "0700"
+      tags:
+        - node_auto_update_script
+
+    - name: Load cron installation and start tasks
+      ansible.builtin.import_tasks: cron.yml
+
+    - name: Schedule Node auto-update script
+      ansible.builtin.cron:
+        name: "Node.js auto-update for {{ portfolio_service.name }}"
+        user: root
+        job: "/opt/{{ portfolio_service.name }}/scripts/update_node.sh"
+        minute: 0
+        hour: 0
+        state: present
+
+    - name: SUCCESS -> Node.js auto-update environment set up for {{ portfolio_service.name }}
+      ansible.builtin.debug:
+        msg: "Node.js auto-update environment for {{ portfolio_service.name }} set up successfully."
+      tags:
+        - node_auto_update_dirs
+        - node_auto_update_script
+        - success
+        - success:stage
+
+  rescue:
+    - name: ERROR -> Failed to set up Node.js auto-update environment for {{ portfolio_service.name }}
+      ansible.builtin.fail:
+        msg: "Node.js auto-update environment setup failed. Check logs, permissions, and template files."
+      tags:
+        - node_auto_update_dirs
+        - node_auto_update_script
+        
+  tags:
+    - node_auto_update
+    - auto_update_env

@@ -1,0 +1,10 @@
+{{ cloudflared_log_path }}/{{ cloudflare_tunnel_service.name }}/logs/*.log {
+    daily
+    rotate 14
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+    create 0640 {{ cloudflare_tunnel_service.user }} {{ cloudflare_tunnel_service.group }}
+}

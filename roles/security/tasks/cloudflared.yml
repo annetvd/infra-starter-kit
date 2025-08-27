@@ -1,0 +1,60 @@
+---
+- name: Install latest Cloudflared binary
+  block:
+    - name: Download Cloudflared GPG key
+      ansible.builtin.get_url:
+        url: https://pkg.cloudflare.com/cloudflare-main.gpg
+        dest: /usr/share/keyrings/cloudflare-main.gpg
+        mode: '0644'
+      tags:
+        - dependencies
+        - install
+
+    - name: Add Cloudflared's official apt repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main"
+        state: present
+        filename: cloudflared
+        update_cache: yes
+      tags:
+        - dependencies
+        - install
+
+    - name: Install Cloudflared
+      ansible.builtin.apt:
+        name: cloudflared
+        state: present
+        update_cache: yes
+      tags:
+        - install
+
+    - name: Ensure general Cloudflared directory exists
+      ansible.builtin.file:
+        path: "{{ cloudflared_path }}"
+        state: directory
+        owner: cloudflared
+        group: cloudflared
+        mode: '0755'
+      tags:
+        - verify
+        - permissions
+
+    - name: SUCCESS -> Cloudflared installed successfully
+      ansible.builtin.debug:
+        msg: "Cloudflared binary installed successfully."
+      tags:
+        - verify
+        - permissions
+        - success
+        - success:stage
+
+  rescue:
+    - name: ERROR -> Failed to install Cloudflared
+      ansible.builtin.fail:
+        msg: "Cloudflared installation failed. Check logs and connectivity."
+      tags:
+        - verify
+        - permissions
+
+  tags:
+    - cloudflared_install

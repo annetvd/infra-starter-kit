@@ -1,0 +1,208 @@
+---
+- name: Include merge_vars tasks if enabled
+  ansible.builtin.include_tasks: merge_vars.yml
+  when: merge_vars
+
+- name: Stop playbook for variable merge verification
+  meta: end_play
+  when: merge_vars and not merge_vars_verified
+
+# System
+- name: Set up system security module
+  ansible.builtin.import_tasks: system.yml
+  tags: [system]
+
+- name: DONE -> System security module applied successfully
+  ansible.builtin.debug:
+    msg: "System security settings applied and sudo user configured successfully."
+  tags: [system, success, success:done]
+
+# Postfix
+- name: Set up Postfix module
+  ansible.builtin.import_tasks: postfix.yml
+  tags: [postfix]
+
+- name: DONE -> Postfix module applied successfully
+  ansible.builtin.debug:
+    msg: "Postfix module applied successfully."
+  tags: [postfix, success, success:done]
+
+# UFW
+- name: Set up UFW module
+  ansible.builtin.import_tasks: ufw.yml
+  tags: [ufw]
+
+- name: DONE -> UFW module applied successfully
+  ansible.builtin.debug:
+    msg: "UFW module applied successfully."
+  tags: [ufw, success, success:done]
+
+# MySQL
+- name: Set up MySQL install and hardening module
+  ansible.builtin.import_tasks: mysql_install_and_hardening.yml
+  tags: [mysql, mysql_install_module]
+
+- name: Set up MySQL databases and users module
+  ansible.builtin.import_tasks: mysql_db_and_users.yml
+  tags: [mysql, mysql_db_users_module]
+
+- name: Set up MySQL import databases module
+  ansible.builtin.import_tasks: mysql_import_db.yml
+  tags: [mysql, mysql_import_module]
+
+- name: DONE -> MySQL module(s) applied successfully
+  ansible.builtin.debug:
+    msg: "MySQL module(s) applied successfully."
+  tags: [mysql, mysql_install_module, mysql_db_users_module, mysql_import_module, success, success:done]
+
+# Apache2
+- name: Set up Apache2 and PHP module
+  ansible.builtin.import_tasks: apache_php.yml
+  tags: [apache]
+
+- name: DONE -> Apache2 and PHP module applied successfully
+  ansible.builtin.debug:
+    msg: "Apache2 and PHP module applied successfully."
+  tags: [apache, success, success:done]
+
+# Node.js API
+- name: Set up Node.js API module
+  ansible.builtin.import_tasks: node_api.yml
+  tags: [node_api]
+
+- name: DONE -> Node.js API module applied successfully
+  ansible.builtin.debug:
+    msg: "Node.js API module applied successfully."
+  tags: [node_api, success, success:done]
+
+# Caddy
+- name: Set up Caddy module
+  ansible.builtin.import_tasks: caddy.yml
+  tags: [caddy]
+
+- name: DONE -> Caddy module applied successfully
+  ansible.builtin.debug:
+    msg: "Caddy module applied successfully."
+  tags: [caddy, success, success:done]
+
+# Cloudflare Tunnel
+- name: Set up Cloudflared module
+  ansible.builtin.import_tasks: cloudflared.yml
+  tags: [cloudflared]
+
+- name: Set up Cloudflare Tunnel module
+  ansible.builtin.import_tasks: cloudflare_tunnel.yml
+  tags: [cloudflare_tunnel]
+
+- name: DONE -> Cloudflare Tunnel modules applied successfully
+  ansible.builtin.debug:
+    msg: "Cloudflare Tunnel modules applied successfully."
+  tags: [cloudflared, cloudflare_tunnel, success, success:done]
+
+# Fail2ban
+- name: Set up Fail2ban module
+  ansible.builtin.import_tasks: fail2ban.yml
+  tags: [fail2ban]
+
+- name: DONE -> Fail2ban module applied successfully
+  ansible.builtin.debug:
+    msg: "Fail2ban module applied successfully."
+  tags: [fail2ban, success, success:done]
+
+# AppArmor
+- name: Set up debops-contrib.apparmor role
+  when: not is_codespace
+  block:
+    - name: Set AppArmor profiles for required services
+      ansible.builtin.set_fact:
+        apparmor_profiles:
+          - name: "/usr/sbin/sshd"
+            enforce: true
+          - name: "/usr/sbin/ufw"
+            enforce: false
+          - name: "/usr/sbin/postfix"
+            enforce: true
+          - name: "/usr/sbin/mysqld"
+            enforce: true
+          - name: "/usr/sbin/apache2"
+            enforce: true
+          - name: "/usr/sbin/php-fpm{{ php_version }}"
+            enforce: true
+          - name: "/usr/bin/caddy"
+            enforce: false
+          - name: "{{ portfolio_service.path }}/.nvm/versions/node/default/bin/node"
+            enforce: false
+          - name: "{{ cloudflared_binary_path }}"
+            enforce: false
+
+    - name: Apply AppArmor profiles
+      ansible.builtin.include_role:
+        name: debops-contrib.apparmor
+      register: apparmor_result
+
+    - name: Reload AppArmor
+      ansible.builtin.systemd:
+        name: apparmor
+        state: reloaded
+      when: apparmor_result.changed
+
+    - name: DONE -> AppArmor profiles applied successfully
+      ansible.builtin.debug:
+        msg: "AppArmor profiles applied successfully."
+      tags: [success, success:done]
+
+  rescue:
+    - name: ERROR -> Failed to apply AppArmor profiles
+      ansible.builtin.fail:
+        msg: "Failed to apply AppArmor profiles. Check the logs for details."
+
+  tags:
+    - apparmor
+
+# Auditd
+- name: Set up robertdebock.auditd role
+  block:
+    - name: Apply Auditd role
+      vars:
+        auditd_start_service: "{{ not is_codespace | default(true) }}"
+      ansible.builtin.include_role:
+        name: robertdebock.auditd
+      register: auditd_result
+
+    - name: Start Auditd service (Codespace)
+      ansible.builtin.command: "service auditd start"
+      changed_when: false
+      when: is_codespace
+    
+    - name: DONE -> Auditd rules applied and service started successfully
+      ansible.builtin.debug:
+        msg: "Auditd rules applied and service started successfully."
+      tags: [success, success:done]
+
+  rescue:
+    - name: ERROR -> Auditd configuration failed
+      ansible.builtin.fail:
+        msg: "Failed to apply Auditd rules or start service. Check the logs for details."
+
+  tags:
+    - auditd
+
+# Unattended-upgrades
+- name: Set up unattended-upgrades module
+  ansible.builtin.import_tasks: unattended-upgrades.yml
+  tags: [unattended-upgrades]
+
+- name: DONE -> Unattended-upgrades module applied successfully
+  ansible.builtin.debug:
+    msg: "Unattended-upgrades module applied successfully."
+  tags: [unattended-upgrades, success, success:done]
+
+# Logrotate
+- name: Set up Logrotate module
+  ansible.builtin.import_tasks: logrotate.yml
+  tags: [logrotate]
+
+- name: DONE -> Logrotate module applied successfully
+  ansible.builtin.debug:
+    msg: "Logrotate module applied successfully."
+  tags: [logrotate, success, success:done]

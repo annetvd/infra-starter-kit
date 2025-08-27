@@ -1,0 +1,38 @@
+[Unit]
+Description=Portfolio Cloudflare Tunnel Service
+After=network.target
+
+[Service]
+# Run as the dedicated cloudflared user
+User={{ cloudflare_tunnel_service.user }}
+Group={{ cloudflare_tunnel_service.group }}
+WorkingDirectory={{ cloudflared_path }}/{{ cloudflare_tunnel_service.name }}
+
+# Note: Uses sudoers.d to allow the dedicated tunnel user to run this command without a password.
+# The cloudflared binary is owned by another user with restrictive permissions (700),
+# so without this sudoers configuration, the tunnel user would not be able to execute it.
+ExecStart=/usr/bin/sudo -u {{ cloudflare_tunnel_service.user }} {{ cloudflared_binary_path }} tunnel run --token {{ cloudflare_tunnel_token }}
+
+Restart=always
+RestartSec=5s
+
+StandardOutput=append:{{ cloudflared_log_path }}/{{ cloudflare_tunnel_service.name }}/logs/cloudflared.log
+StandardError=append:{{ cloudflared_log_path }}/{{ cloudflare_tunnel_service.name }}/logs/cloudflared.log
+
+# Security hardening
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=full
+PrivateTmp=true
+ProtectKernelModules=true
+ReadWritePaths={{ cloudflared_path }}/{{ cloudflare_tunnel_service.name }} {{ cloudflared_log_path }}/{{ cloudflare_tunnel_service.name }}/logs
+ProtectClock=true
+ProtectHostname=true
+PrivateDevices=true
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictSUIDSGID=true
+CapabilityBoundingSet=
+AmbientCapabilities=   
+
+[Install]
+WantedBy=multi-user.target

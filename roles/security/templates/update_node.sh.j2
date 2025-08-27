@@ -1,0 +1,47 @@
+#!/bin/bash
+set -euo pipefail
+
+log_file="{{ portfolio_service.log_path }}/logs_update/node_update.log"
+
+# Ensure log file exists and has correct permissions
+if [ ! -f "$log_file" ]; then
+  touch "$log_file"
+  chmod 0600 "$log_file"
+  chown "{{ portfolio_service.user }}:{{ portfolio_service.group }}" "$log_file"
+fi
+
+echo "$(date -Is) Starting Node.js update script" >> "$log_file" 2>&1
+
+# Load NVM from portfolio_service user, who installed it
+NVM_DIR="{{ portfolio_service.path }}/.nvm"
+if [ -s "$NVM_DIR/nvm.sh" ]; then
+  . "$NVM_DIR/nvm.sh"
+  echo "$(date -Is) Loaded NVM from $NVM_DIR" >> "$log_file" 2>&1
+else
+  echo "$(date -Is) ERROR: nvm not found in $NVM_DIR" >> "$log_file" 2>&1
+  exit 1
+fi
+
+before="$(nvm current || true)"
+echo "$(date -Is) Current Node version before update: ${before:-none}" >> "$log_file" 2>&1
+
+# Install the latest version of the specified branch as root
+echo "$(date -Is) Installing Node LTS 'Iron'" >> "$log_file" 2>&1
+nvm install lts/iron --reinstall-packages-from="${before:-default}" >> "$log_file" 2>&1
+nvm alias default lts/iron >> "$log_file" 2>&1
+nvm use default >> "$log_file" 2>&1
+
+# Ensure NVM directory and its contents are owned by the node_api user and group
+chown -R {{ portfolio_service.user }}:{{ portfolio_service.group }} "$NVM_DIR" >> "$log_file" 2>&1
+
+after="$(nvm current || true)"
+echo "$(date -Is) Current Node version after update: ${after:-unknown}" >> "$log_file" 2>&1
+
+if [ "${before:-}" != "${after:-}" ]; then
+  echo "$(date -Is) Node updated: ${before:-none} -> ${after:-unknown}. Restarting {{ portfolio_service.name }}.service" >> "$log_file" 2>&1
+  /bin/systemctl restart "{{ portfolio_service.name }}.service" >> "$log_file" 2>&1
+else
+  echo "$(date -Is) Node is already at ${after:-unknown}. Service will not be restarted." >> "$log_file" 2>&1
+fi
+
+echo "$(date -Is) Node.js update script finished" >> "$log_file" 2>&1

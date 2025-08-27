@@ -1,0 +1,148 @@
+---
+- name: Configure {{ cloudflare_tunnel_service.name }} user and directories
+  block:
+    - name: Create dedicated group for Cloudflare Tunnel
+      ansible.builtin.group:
+        name: "{{ cloudflare_tunnel_service.group }}"
+        state: present
+      tags:
+        - user_services
+
+    - name: Create dedicated user
+      ansible.builtin.user:
+        name: "{{ cloudflare_tunnel_service.user }}"
+        group: "{{ cloudflare_tunnel_service.group }}"
+        state: present
+        system: true
+        create_home: false
+        shell: /bin/false
+      tags:
+        - user_services
+
+    - name: Ensure Cloudflared tunnel subdirectory exists
+      ansible.builtin.file:
+        path: "{{ cloudflared_path }}/{{ cloudflare_tunnel_service.name }}"
+        state: directory
+        owner: "{{ cloudflare_tunnel_service.user }}"
+        group: "{{ cloudflare_tunnel_service.group }}"
+        mode: '0700'
+      tags:
+        - permissions
+
+    - name: Create the service log directory
+      ansible.builtin.file:
+        path: "{{ cloudflared_log_path }}/{{ cloudflare_tunnel_service.name }}/logs"
+        state: directory
+        owner: "{{ cloudflare_tunnel_service.user }}"
+        group: "{{ cloudflare_tunnel_service.group }}"
+        mode: '0750'
+      tags:
+        - permissions
+        - logrotate
+
+    - name: Ensure log file exists with correct permissions
+      ansible.builtin.file:
+        path: "{{ cloudflared_log_path }}/{{ cloudflare_tunnel_service.name }}/logs/cloudflared.log"
+        state: file
+        owner: "{{ cloudflare_tunnel_service.user }}"
+        group: "{{ cloudflare_tunnel_service.group }}"
+        mode: '0640'
+      tags:
+        - permissions
+        - logrotate
+
+    - name: SUCCESS -> {{ cloudflare_tunnel_service.name }} user and directories configured successfully
+      ansible.builtin.debug:
+        msg: "{{ cloudflare_tunnel_service.name }} user and directories configured successfully."
+      tags:
+        - permissions
+        - logrotate
+        - user_services
+        - success
+        - success:stage
+      
+  rescue:
+    - name: ERROR -> Failed to configure {{ cloudflare_tunnel_service.name }} user or directories
+      ansible.builtin.fail:
+        msg: "Failed to configure the {{ cloudflare_tunnel_service.name }} user or directories. Please check the logs for details."
+      tags:
+        - permissions
+        - logrotate
+        - user_services
+
+  tags:
+    - cloudflare_tunnel_env_setup
+
+# --- Block: Configure and verify Cloudflare tunnel service ---
+
+- name: Configure and verify Cloudflare tunnel service
+  block:
+    # Allow the tunnel user to execute cloudflared tunnel run without password
+    - name: Allow {{ cloudflare_tunnel_service.name }} user to run its Cloudflared Tunnel
+      ansible.builtin.copy:
+        dest: "/etc/sudoers.d/cloudflared-{{ cloudflare_tunnel_service.name }}"
+        content: |
+          {{ cloudflare_tunnel_service.user }} ALL=(ALL) NOPASSWD: {{ cloudflared_binary_path }} tunnel run --token {{ cloudflare_tunnel_token }}
+        owner: root
+        group: root
+        mode: "0440"
+        validate: "visudo -cf %s"
+      tags:
+        - service_configuration
+
+    - name: Create {{ cloudflare_tunnel_service.name }} systemd service file from template
+      ansible.builtin.template:
+        src: "cloudflare_tunnel.service.j2"
+        dest: "/etc/systemd/system/{{ cloudflare_tunnel_service.name }}.service"
+        owner: root
+        group: root
+        mode: '0644'
+      notify: reload_systemd_daemon
+      tags:
+        - service_configuration
+
+    - name: Ensure {{ cloudflare_tunnel_service.name }} is running and enabled on boot (VM)
+      ansible.builtin.systemd:
+        name: "{{ cloudflare_tunnel_service.name }}.service"
+        state: started
+        enabled: true
+      when: not is_codespace
+      tags:
+        - service_configuration
+
+    - name: Verify Cloudflare Tunnel status (Codespace)
+      ansible.builtin.command: pgrep -x cloudflared
+      register: cloudflared_running
+      ignore_errors: true
+      changed_when: false
+      when: is_codespace
+      tags:
+        - service_configuration
+        - verification
+
+    - name: Start Cloudflare Tunnel if not running (Codespace)
+      ansible.builtin.shell: "nohup {{ cloudflared_binary_path }} tunnel run --token {{ cloudflare_tunnel_token }} &"
+      no_log: true
+      when: is_codespace and cloudflared_running.rc != 0
+      tags:
+        - service_configuration
+
+    - name: SUCCESS -> {{ cloudflare_tunnel_service.name }} created and running
+      ansible.builtin.debug:
+        msg: "The Cloudflare Tunnel '{{ cloudflare_tunnel_service.name }}' is active."
+      tags:
+        - service_configuration
+        - verify
+        - success
+        - success:stage
+
+  rescue:
+    - name: ERROR -> Service configuration or execution failed
+      ansible.builtin.fail:
+        msg: "An unexpected error occurred while configuring or execution '{{ cloudflare_tunnel_service.name }}'. Check systemd and Cloudflared logs."
+      tags:
+        - service_configuration
+        - verify
+
+  tags:
+    - cloudflare_tunnel_service_setup

@@ -1,0 +1,253 @@
+---
+- name: Pre-check MySQL import conditions
+  when: 
+    - mysql_databases is defined
+    - mysql_databases | selectattr('init_when', 'defined') | list | length > 0
+  block:
+    - name: Check if database is empty based on init_when "database empty"
+      community.mysql.mysql_query:
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+        query: "SELECT COUNT(*) AS tables_count FROM information_schema.tables WHERE table_schema='{{ item.name }}';"
+      loop: "{{ mysql_databases }}"
+      loop_control:
+        extended: true
+        label: "{{ item.name }} ({{ item.init_id }})"
+      no_log: true
+      register: db_tables_count
+      changed_when: false
+      when: 
+        - item.init_when is defined
+        - item.init_when == "database empty"
+      failed_when: 
+        - item.init_id is not defined
+        - item.dump_file_path is not defined
+
+    - name: Fail if any database is not empty
+      ansible.builtin.fail:
+        msg: >
+          The following databases are not empty:
+          {{
+            db_tables_count.results
+            | selectattr('query_result', 'defined')
+            | selectattr('query_result', 'ne', [[{'tables_count': 0}]])
+            | map(attribute='item.name')
+            | list
+            | join(', ')
+          }}
+      when:
+        - db_tables_count is defined and db_tables_count.results is defined
+        - db_tables_count.results
+          | selectattr('query_result', 'defined')
+          | map(attribute='query_result')
+          | map('first')
+          | map('first')
+          | map(attribute='tables_count')
+          | select('gt', 0)
+          | list
+          | length > 0
+
+    - name: Check if .imported file exists when init_when is "not .imported"
+      ansible.builtin.stat:
+        path: /var/lib/infra-starter-kit/security/mysql/{{ item.init_id }}.imported
+      loop: "{{ mysql_databases }}"
+      loop_control:
+        extended: true
+        label: "{{ item.name }} ({{ item.init_id }})"
+      register: imported_flag
+      changed_when: false
+      when: 
+        - item.init_when is defined
+        - item.init_when == "not .imported"
+      failed_when: 
+        - item.init_id is not defined
+        - item.dump_file_path is not defined
+
+    - name: Fail if any database has already been imported
+      ansible.builtin.fail:
+        msg: >
+          The following databases are already imported with the current dump file and init_id:
+          {{
+            imported_flag.results
+            | selectattr('stat', 'defined')
+            | selectattr('stat.exists', 'equalto', true)
+            | map(attribute='item.name')
+            | list
+            | join(', ')
+          }}
+      when:
+        - imported_flag is defined and imported_flag.results is defined
+        - imported_flag.results
+          | selectattr('stat', 'defined')
+          | map(attribute='stat')
+          | selectattr('exists', 'equalto', true)
+          | list | length > 0
+
+    - name: SUCCESS -> All pre-checks passed for MySQL imports
+      ansible.builtin.debug:
+        msg: "All pre-checks passed for MySQL imports."
+      tags:
+        - success
+        - success:stage
+
+  tags:
+    - mysql_import_precheck_block
+    - mysql_import
+
+# --- Block: Prepare MySQL database dumps and backups ---
+
+- name: Prepare MySQL database dumps and backups
+  when: 
+    - mysql_databases is defined
+    - mysql_databases | selectattr('init_when', 'defined') | list | length > 0
+  block:
+    - name: Ensure infra-starter-kit MySQL security directory exists
+      ansible.builtin.file:
+        path: /var/lib/infra-starter-kit/security/mysql/backups
+        state: directory
+        mode: '0700'
+
+    - name: Copy database dump file to remote host
+      ansible.builtin.copy:
+        src: "{{ item.dump_file_path }}"
+        dest: "/tmp/{{ item.dump_file_path | basename }}"
+      loop: "{{ mysql_databases }}"
+      loop_control:
+        label: "{{ item.name }} ({{ item.init_id }})"
+      when: 
+        - item.init_when is defined
+        - item.init_when in ["not .imported", "database empty"]
+
+    - name: Backup database if not empty
+      ansible.builtin.shell: >
+        mysqldump -uroot -p{{ mysql_root_password }} {{ item.name }}
+        > /var/lib/infra-starter-kit/security/mysql/backups/{{ item.init_id }}_{{ ansible_date_time.iso8601 }}.sql
+      loop: "{{ mysql_databases }}"
+      loop_control:
+        label: "{{ item.name }} ({{ item.init_id }})"
+      no_log: true
+      when:
+        - item.init_when is defined
+        - item.init_when == "not .imported"
+
+    - name: SUCCESS -> Database dumps copied and backups ("not .imported") created successfully
+      ansible.builtin.debug:
+        msg: "Database dumps copied and backups ('not .imported') created successfully."
+      tags:
+        - success
+        - success:stage
+
+  rescue:
+    - name: ERROR -> Failed to copy dump files or backup databases
+      ansible.builtin.fail:
+        msg: "Failed during dump file copy or database backup. Check file paths and MySQL connection."
+
+  tags:
+    - mysql_import_prepare_block
+    - mysql_import
+
+# --- Block: Import MySQL dumps and perform cleanup ---
+
+- name: Import MySQL dumps and perform cleanup
+  when: 
+    - mysql_databases is defined
+    - mysql_databases | selectattr('init_when', 'defined') | list | length > 0
+  block:
+    - name: Import database
+      community.mysql.mysql_db:
+        state: import
+        name: "{{ item.name }}"
+        target: "/tmp/{{ item.dump_file_path | basename }}"
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+      loop: "{{ mysql_databases }}"
+      loop_control:
+        label: "{{ item.name }} ({{ item.init_id }}, {{ item.init_when }})"
+      no_log: true
+      register: mysql_db_import_status
+      ignore_errors: true
+      when: item.init_when is defined
+  
+    - name: Create .imported flag file
+      ansible.builtin.file:
+        path: /var/lib/infra-starter-kit/security/mysql/{{ item.init_id }}.imported
+        state: touch
+      loop: "{{ mysql_databases }}"
+      loop_control:
+        extended: true
+        label: "{{ item.name }} ({{ item.init_id }})"
+      register: imported_files_creation
+      when:
+        - item.init_when is defined
+        - mysql_db_import_status.results[ansible_loop.index0].failed == false
+
+    - name: Remove temp dump file
+      ansible.builtin.file:
+        path: "/tmp/{{ item.dump_file_path | basename }}"
+        state: absent
+      loop: "{{ mysql_databases }}"
+      loop_control:
+        extended: true
+        label: "{{ item.name }} ({{ item.init_id }})"
+      register: remove_dump_files_status
+      when:
+        - item.init_when is defined
+        - mysql_db_import_status.results[ansible_loop.index0].failed == false
+
+  rescue:
+    - name: ERROR -> .imported flag creation failed
+      ansible.builtin.fail:
+        msg: >
+          Failed to create .imported file for:
+          {{
+            imported_files_creation.results
+            | selectattr('failed', 'equalto', true)
+            | map(attribute='item.name')
+            | list
+            | join(', ')
+          }}
+      when: 
+        - imported_files_creation is defined and imported_files_creation.results is defined
+        - imported_files_creation.results | selectattr('failed', 'eq', true) | list | length > 0
+
+    - name: ERROR -> Temp dump file deletion failed
+      ansible.builtin.fail:
+        msg: >
+          Failed to remove temp dump file for:
+          {{
+            imported_files_creation.results
+            | selectattr('failed', 'equalto', true)
+            | map(attribute='item.name')
+            | list
+            | join(', ')
+          }}
+      when:
+        - remove_dump_files_status is defined and remove_dump_files_status.results is defined
+        - remove_dump_files_status.results | selectattr('failed', 'eq', true) | list | length > 0
+
+  always:
+    - name: Fail if one or more database imports failed
+      ansible.builtin.fail:
+        msg: >
+          The following database imports failed:
+          {{
+            mysql_db_import_status.results
+            | selectattr('rc', 'ne', 0)
+            | map(attribute='item.name')
+            | list
+            | join(', ')
+          }}
+      when: 
+        - mysql_db_import_status is defined and mysql_db_import_status.results is defined
+        - mysql_db_import_status.results | selectattr('failed', 'eq', true) | list | length > 0
+
+    - name: SUCCESS -> MySQL databases imported successfully
+      ansible.builtin.debug:
+        msg: "Please check the logs to confirm that the .imported flag files were created and temporary dump files were cleaned properly."
+      tags:
+        - success
+        - success:stage
+
+  tags:
+    - mysql_import_and_cleanup
+    - mysql_import

@@ -1,0 +1,16 @@
+/var/log/mysql/mysql.log
+/var/log/mysql/mysql-slow.log
+/var/log/mysql/error.log
+{
+    daily
+    rotate 7
+    notifempty
+    compress
+    delaycompress
+    postrotate
+        # Flush logs to signal MySQL to reopen them 
+        mysql -u root -p"{{ mysql_root_password }}" -e "FLUSH LOGS;" >/dev/null 2>&1 || true
+    endscript
+    create 0640 mysql adm
+    sharedscripts
+}

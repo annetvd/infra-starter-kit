@@ -1,0 +1,82 @@
+---
+- name: Configure and Install Caddy
+  block:
+    - name: Download Caddy GPG key and store in keyring
+      ansible.builtin.get_url:
+        url: "https://dl.cloudsmith.io/public/caddy/stable/gpg.key"
+        dest: "/usr/share/keyrings/caddy-stable-archive-keyring.gpg"
+        mode: '0644'
+      tags:
+        - dependencies
+        - install
+
+    - name: Add Caddy's official apt repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main"
+        state: present
+        filename: caddy-stable
+        update_cache: yes
+      tags:
+        - dependencies
+        - install
+
+    - name: Install Caddy
+      ansible.builtin.apt:
+        name: caddy
+        state: present
+        update_cache: yes
+      tags:
+        - install
+
+    - name: Create directory for Caddy access logs and set permissions
+      ansible.builtin.file:
+        path: "{{ caddy_proxy.log_path }}"
+        state: directory
+        owner: caddy
+        group: caddy
+        mode: '0750'
+      tags:
+        - logrotate
+        - caddy_logs
+
+    - name: Create directory for CSP reports and set permissions
+      ansible.builtin.file:
+        path: "{{ caddy_proxy.csp_reports_log_path }}"
+        state: directory
+        owner: caddy
+        group: caddy
+        mode: '0750'
+      tags:
+        - logrotate
+        - caddy_csp_report_logs
+
+    - name: Enable and start Caddy service (VM)
+      ansible.builtin.systemd:
+        name: caddy
+        enabled: true
+        state: started
+      when: not is_codespace
+
+    - name: Start caddy service (Codespace)
+      ansible.builtin.command: "caddy start --config /dev/null"
+      when: is_codespace
+      changed_when: false
+
+    - name: SUCCESS -> Caddy installed and service configured successfully
+      ansible.builtin.debug:
+        msg: "Caddy installed and service configured successfully."
+      tags:
+        - logrotate
+        - caddy_logs
+        - caddy_csp_report_logs
+        - success
+        - success:stage
+  
+  rescue:
+    - name: ERROR -> Caddy installation or service configuration failed
+      ansible.builtin.fail:
+        msg: "Caddy installation or service configuration failed. Check the logs for details."
+      tags:
+        - logrotate
+        - caddy_logs
+        - caddy_csp_report_logs

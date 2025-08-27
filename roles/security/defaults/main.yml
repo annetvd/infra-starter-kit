@@ -1,0 +1,85 @@
+---
+# ====================================================
+# Role settings (configurable)
+# ====================================================
+merge_vars: false
+merge_vars_verified: false
+
+# ====================================================
+# General system variables (configurable)
+# ====================================================
+# Set to "ubuntu" when deploying on Oracle Cloud.
+system_user: projectuser
+system_user_pass: "1234"
+system_user_ssh_public_key: ""
+
+foreign_node_api_ip: 127.0.0.1/8
+
+security_email: codespace@localhost
+
+# ====================================================
+# Postfix (configurable)
+# ====================================================
+postfix_mailname: localhost.localdomain
+# "localhost.localdomain" is a valid and functional default domain for systems without a configured real domain.
+postfix_domain: localhost.localdomain
+
+# ====================================================
+# MySQL (configurable)
+# ====================================================
+# See roles/security/tasks/mysql_install_and_hardening.yml for the purpose of `mysql_bind_enabled`.
+mysql_bind_enabled: true
+mysql_root_password: "1234"
+
+# NOTE: This playbook block automates the initialization of MySQL databases from dump files.
+# Depending on each database's `init_when` setting, it may:
+#   - Import the dump if the database is empty ("database empty").
+#   - Reimport the dump if the .imported flag file tied to init_id is not present ("not .imported").
+#   - Backup the current database before overwriting it ("not .imported").
+#   - Create a `.imported` flag after a successful import.
+#
+# CAUTION: Dump files may DROP and recreate databases, running the dumps manually 
+# or in another context could cause data loss.
+#
+# Finally, do not include "/" in either dump_file_path filename or init_id,
+# this may create unintended directories on the remote host.
+
+mysql_databases:
+  - name: awococado
+    init_id: awococado_09-08-2024
+    dump_file_path: files/awococado.sql
+    init_when: "database empty"
+  - name: logbook
+    init_id: logbook_09-08-2024
+    dump_file_path: files/logbook.sql
+    init_when: "database empty"
+
+# The 'host' property can be omitted if set to 'localhost' since it is the default value.
+mysql_users:
+  - user: awococado_user
+    database: awococado
+    password: "1234"
+    host: localhost
+  - user: logbook_user
+    database: logbook
+    password: "1234"
+    host: localhost
+
+# ====================================================
+# Apache2 (configurable)
+# ====================================================
+modsecurity_crs_overwrite_config: true # Set to 'false' to prevent template from overwriting
+
+# ====================================================
+# Cloudflare (configurable)
+# ====================================================
+cloudflare_tunnel_token: ""
+cloudflare_tunnel_service:
+  name: "portfolio-tunnel"
+  user: "portfolio-tunnel"
+  group: "portfolio-tunnel"
+
+# ====================================================
+# Logrotate (configurable)
+# ====================================================
+logrotate_overwrite: false

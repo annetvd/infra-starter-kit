@@ -1,0 +1,93 @@
+---
+- name: Install and start UFW service
+  block:
+    - name: Install UFW package
+      ansible.builtin.apt:
+        name: ufw
+        state: present
+        update_cache: true
+      tags:
+        - install
+
+    - name: Enable UFW firewall
+      community.general.ufw:
+        state: enabled
+
+    - name: Enable and start UFW service (VM)
+      ansible.builtin.systemd:
+        name: ufw
+        enabled: true
+        state: started
+      when: not is_codespace
+      
+    - name: Start UFW service (Codespace)
+      ansible.builtin.shell: service ufw start
+      when: is_codespace
+      changed_when: false
+      
+    - name: SUCCESS -> UFW installed and started successfully
+      ansible.builtin.debug:
+        msg: "UFW installed and started successfully."
+      tags:
+        - success
+        - success:stage
+
+  rescue:
+    - name: ERROR -> UFW installation or service start failed
+      ansible.builtin.fail:
+        msg: "UFW installation or service start failed. Check package manager or service logs."
+  
+  tags:
+    - ufw_install
+
+- name: Set UFW rules and policies
+  block:
+    - name: Set UFW default incoming policy to deny
+      community.general.ufw:
+        direction: incoming
+        policy: deny
+      tags:
+        - policy
+
+    - name: Set UFW default outgoing policy to allow
+      community.general.ufw:
+        direction: outgoing
+        policy: allow
+      tags:
+        - policy
+
+    - name: Limit SSH connections (rate limiting)
+      community.general.ufw:
+        rule: limit
+        port: '22'
+        proto: tcp
+      tags:
+        - ssh
+
+    - name: Enable UFW logging
+      community.general.ufw:
+        logging: on
+      tags:
+        - logging
+
+    - name: SUCCESS -> UFW rules and policies configured successfully
+      ansible.builtin.debug:
+        msg: "UFW rules and policies configured successfully."
+      tags:
+        - shh
+        - logging
+        - policy
+        - success
+        - success:stage
+
+  rescue:
+    - name: ERROR -> Failed to configure UFW rules and policies
+      ansible.builtin.fail:
+        msg: "An unexpected error occurred while configuring UFW rules and policies. Check the logs before proceeding."
+      tags:
+        - shh
+        - logging
+        - policy
+  
+  tags:
+    - ufw_rules

@@ -1,0 +1,25 @@
+- name: Ensure cron is installed
+  ansible.builtin.apt:
+    name: cron
+    state: present
+    update_cache: true
+  tags:
+    - install
+
+- name: Enable and start cron service (VM)
+  ansible.builtin.systemd:
+    name: cron
+    enabled: true
+    state: started
+  when: not is_codespace
+
+- name: Verify if cron is running (Codespace)
+  ansible.builtin.command: service cron status
+  register: cron_running
+  ignore_errors: true
+  changed_when: false
+  when: is_codespace
+
+- name: Start cron service (Codespace)
+  ansible.builtin.command: "service cron start"
+  when: is_codespace and cron_running.rc != 0

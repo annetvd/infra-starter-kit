@@ -1,0 +1,73 @@
+---
+- name: Create MySQL Databases
+  when: mysql_databases is defined
+  block:
+    - name: Create MySQL database
+      community.mysql.mysql_db:
+        name: "{{ item.name }}"
+        encoding: utf8mb4
+        collation: utf8mb4_unicode_ci
+        state: present
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+      loop: "{{ mysql_databases }}"
+      loop_control:
+        label: "{{ item.name }}"
+      no_log: true
+
+    - name: SUCCESS -> Databases created successfully
+      ansible.builtin.debug:
+        msg: "MySQL databases created successfully."
+      tags:
+        - success
+        - success:stage
+
+  rescue:
+    - name: ERROR -> Failed to create databases
+      ansible.builtin.fail:
+        msg: "MySQL database creation failed. Check MySQL logs and credentials."
+
+  tags:
+    - mysql_db_create_block
+
+# --- Block: Create MySQL Users & Grants ---
+
+- name: Create MySQL Users & Grants
+  when: mysql_users is defined
+  block:
+    - name: Create MySQL user and grant privileges
+      community.mysql.mysql_user:
+        name: "{{ item.user }}"
+        password: "{{ item.password }}"
+        host: "{{ item.host | default('localhost') }}"
+        priv: "{{ item.database }}.*:ALL"
+        state: present
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+      loop: "{{ mysql_users }}"
+      loop_control:
+        label: "{{ item.user }} ({{ item.database }})"
+      no_log: true
+
+    - name: Flush MySQL privileges
+      community.mysql.mysql_query:
+        query: "FLUSH PRIVILEGES;"
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+      no_log: true
+
+    - name: SUCCESS -> Users created successfully
+      ansible.builtin.debug:
+        msg: "MySQL Users created successfully."
+      tags:
+        - success
+        - success:stage
+
+  rescue:
+    - name: ERROR -> Failed to create MySQL users
+      ansible.builtin.fail:
+        msg: "MySQL user creation failed. Check MySQL logs and credentials."
+
+  tags:
+    - mysql_user_create_block
+    - user

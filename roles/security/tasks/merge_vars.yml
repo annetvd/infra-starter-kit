@@ -1,0 +1,93 @@
+---
+- name: Build fail2ban_web_services list
+  block:
+    - name: Create fail2ban_web_services list
+      vars:
+        found_needs_access: "{{ item.fail2ban_needs_access | default(false) }}"
+        found_group: "{{ item.group | default('') }}"
+      ansible.builtin.set_fact:
+        fail2ban_web_services: >-
+          {{
+            fail2ban_web_services | default([]) + 
+            ([{
+              'name': item.name,
+              'fail2ban_needs_access': found_needs_access,
+              'group': found_group
+            }] if found_group != '' else [])
+          }}
+      loop: "{{ [portfolio_service] + [caddy_proxy] }}"
+      loop_control:
+        loop_var: item
+        label: "{{ item.name }}"
+      changed_when: false
+
+    - name: Debug fail2ban_web_services after merge
+      ansible.builtin.debug:
+        var: fail2ban_web_services
+      when: merge_vars_verified | default(false) == false
+  
+  rescue:
+    - name: ERROR -> Could not build fail2ban_web_services
+      ansible.builtin.fail:
+        msg: "Failed to build fail2ban_web_services. Check that each service has 'name' and 'group' defined."
+
+  tags:
+    - fail2ban
+    - fail2ban-permissions
+    - fail2ban_install
+
+- name: Consolidate fail2ban_jails when necessary
+  block:
+    - name: Build temporary list of enriched fail2ban_jails
+      vars:
+        found_port: >-
+          {{ (([portfolio_service] + [apache_service])
+            | selectattr('name', 'equalto', item.name)
+            | map(attribute='port')
+            | first) | default('') }}
+        found_log: >-
+          {{ (log_files_services
+            | selectattr('name', 'equalto', item.name)
+            | map(attribute='log_path')
+            | first) | default('') }}
+        found_jail: >-
+          {{ (fail2ban_jails
+            | selectattr('name', 'equalto', item.name)
+            | first) | default('') }}
+      ansible.builtin.set_fact:
+        fail2ban_jails_aux: >-
+          {{
+            fail2ban_jails_aux | default([]) + ([found_jail] | map('combine',
+              (
+                dict(port=found_port) if (item.port | default('') | string | length == 0 and found_port != '') else {},
+                dict(log_path=found_log) if (item.log_path | default('') | string | length == 0 and found_log != '') else {}
+              )
+            ) | list)
+          }}
+      loop: "{{ fail2ban_jails }}"
+      loop_control:
+        loop_var: item
+        label: "{{ item.name }}"
+      changed_when: false
+      failed_when: >
+        (item.port | default('') | string | length == 0 and found_port == '') or
+        (item.log_path | default('') | string | length == 0 and found_log == '')
+
+    - name: Commit merged values into fail2ban_jails
+      ansible.builtin.set_fact:
+        fail2ban_jails: "{{ fail2ban_jails_aux }}"
+      changed_when: false
+
+    - name: Debug fail2ban_jails after merge
+      ansible.builtin.debug:
+        var: fail2ban_jails
+      when: merge_vars_verified | default(false) == false
+
+  rescue:
+    - name: ERROR -> It was not possible to consolidate at least one fail2ban_jails item
+      ansible.builtin.fail:
+        msg: "It is not possible to consolidate the fail2ban_jails variable due to missing information. Please check the related variables."
+
+  tags:
+    - fail2ban
+    - fail2ban_jails

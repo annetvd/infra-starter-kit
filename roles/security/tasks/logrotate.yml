@@ -1,0 +1,248 @@
+---
+- name: Ensure logrotate is installed and directory ready
+  block:
+    - name: Install logrotate package
+      ansible.builtin.apt:
+        name: logrotate
+        state: present
+        update_cache: true
+      tags:
+        - install
+
+    - name: Ensure /etc/logrotate.d directory exists with correct permissions
+      ansible.builtin.file:
+        path: /etc/logrotate.d
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+
+    - name: SUCCESS -> Logrotate package installed and /etc/logrotate.d ready
+      ansible.builtin.debug:
+        msg: "Logrotate is installed and /etc/logrotate.d directory exists with correct permissions."
+      tags:
+        - install
+        - success
+        - success:stage
+
+  rescue:
+    - name: ERROR -> Failed to install logrotate or configure /etc/logrotate.d
+      ansible.builtin.fail:
+        msg: "Logrotate installation or /etc/logrotate.d directory setup failed. Check permissions and package availability."
+
+  tags:
+    - logrotate_install
+    - "{{ all_logrotate_service_tags }}"
+
+# --- Block: Log file existence checks ---
+
+- name: Perform log file/directory existence checks
+  block:
+    - name: Check if log directories exist
+      ansible.builtin.stat:
+        path: >-
+          {{ (item.log_path | basename | regex_search('\.'))
+              | ternary(item.log_path | dirname, item.log_path) }}
+      register: log_path_status_dir
+      loop: "{{ log_files_services | selectattr('log_check_type', 'equalto', 'directory') | list }}"
+      loop_control:
+        label: >-
+          {{ item.name }} ({{
+            (item.log_path | basename | regex_search('\.'))
+            | ternary(item.log_path | dirname, item.log_path)
+          }})
+      changed_when: false
+      tags: 
+        - "{{ all_logrotate_service_tags }}"
+
+    - name: Assert log directories exist
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+        fail_msg: >
+          "Log directory {{ item.item.log_path }} for {{ item.item.name }} does not exist."
+        success_msg: "Log directory for {{ item.item.name }} exists."
+        quiet: true
+      loop: "{{ log_path_status_dir.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      changed_when: false
+      tags: 
+        - "{{ all_logrotate_service_tags }}"
+
+    - name: Check if log files exist
+      ansible.builtin.stat:
+        path: "{{ item.log_path }}"
+      register: log_path_status_file
+      loop: "{{ log_files_services | selectattr('log_check_type', 'equalto', 'file') | list }}"
+      loop_control:
+        label: "{{ item.name }} ({{ item.log_path }})"
+      changed_when: false
+      tags: 
+        - "{{ all_logrotate_service_tags }}"
+
+    - name: Assert log files exist
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+        fail_msg: >
+          "Log file {{ item.item.log_path }} for {{ item.item.name }} does not exist."
+        success_msg: "Log file for {{ item.item.name }} exists."
+        quiet: true
+      loop: "{{ log_path_status_file.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      changed_when: false
+      tags: 
+        - "{{ all_logrotate_service_tags }}"
+
+    - name: SUCCESS -> All configured service log paths exist
+      ansible.builtin.debug:
+        msg: "All configured service log paths exist."
+      tags:
+        - "{{ all_logrotate_service_tags }}"
+        - success
+        - success:stage
+
+  tags:
+    - log_path_block
+    - precheck
+
+# --- Block: Logrotate configuration tasks for services ---
+
+- name: Deploy logrotate configurations
+  block:
+    - name: Copy logrotate config file
+      ansible.builtin.copy:
+        src: "{{ item.src_file }}"
+        dest: "/etc/logrotate.d/{{ item.name }}"
+        owner: root
+        group: root
+        mode: '0644'
+        force: "{{ logrotate_overwrite }}"
+      loop: "{{ log_files_services | selectattr('is_template', 'equalto', false) | list }}"
+      loop_control:
+        label: "{{ item.name }}"
+      tags: 
+        - "['config'] + {{ all_logrotate_service_tags }}"
+
+    - name: Apply logrotate config template
+      ansible.builtin.template:
+        src: "{{ item.src_file }}"
+        dest: "/etc/logrotate.d/{{ item.name }}"
+        owner: root
+        group: root
+        mode: '0640'
+        force: "{{ logrotate_overwrite }}"
+      loop: "{{ log_files_services | selectattr('is_template', 'equalto', true) | list }}"
+      loop_control:
+        label: "{{ item.name }}"
+      tags: 
+        - "['config'] + {{ all_logrotate_service_tags }}"
+
+    - name: SUCCESS -> All logrotate configurations deployed
+      ansible.builtin.debug:
+        msg: "All logrotate configurations deployed successfully."
+      tags:
+        - "{{ all_logrotate_service_tags }}"
+        - success
+        - success:stage
+
+  rescue:
+    - name: ERROR -> Failed to deploy logrotate configurations
+      ansible.builtin.fail:
+        msg: "An error occurred during logrotate configuration deployment. Check the logs for details."
+
+  tags:
+    - logrotate_deploy_block
+    
+# --- Block: Simulate individual logrotate configurations (Codespace) ---
+
+- name: Simulate individual logrotate configurations
+  block:
+    # Note: This task ignores errors in Codespaces because services like SSH and Auditd rely on syslog, 
+    # which is unavailable and logs are not generated there. Critical security services are also set without
+    # 'missingok' to fail intentionally if issues occur. In production, these settings must never fail.
+
+    - name: Dry-run logrotate for service logs
+      ansible.builtin.command: "logrotate -d /etc/logrotate.d/{{ item.name }}"
+      register: individual_logrotate_debug_output
+      changed_when: false
+      loop: "{{ log_files_services }}"
+      loop_control:
+        label: "{{ item.name }}"
+      ignore_errors: "{{ is_codespace | default(false)}}"
+      tags:
+        - "{{ all_logrotate_service_tags }}"
+
+    - name: SUCCESS -> All individual logrotate configurations are valid
+      ansible.builtin.debug:
+        msg: "All individual logrotate configurations passed validation."
+      tags:
+        - "{{ all_logrotate_service_tags }}"
+        - success
+        - success:stage
+  
+  tags:
+    - logrotate_individual_test_block
+    - verification
+
+# --- Block: Global Logrotate syntax test ---
+
+# Note: This block is skipped in Codespaces since logrotate will always fail here unless problematic 
+# parts are commented out. Testing makes no sense in this environment but is required in production.
+
+- name: Perform global logrotate syntax test
+  when: not is_codespace
+  block:
+    - name: Test overall logrotate configuration syntax
+      ansible.builtin.command: "logrotate -d /etc/logrotate.conf"
+      changed_when: false
+      
+    - name: SUCCESS -> Overall logrotate configuration is valid
+      ansible.builtin.debug:
+        msg: "Overall logrotate configuration is valid."
+      tags:
+        - success
+        - success:stage
+
+  rescue:
+    - name: ERROR -> Global logrotate syntax test failed
+      ansible.builtin.fail:
+        msg: "The overall logrotate configuration has syntax errors. Check the logs for details."
+
+  tags:
+    - logrotate_global_test_block
+    - "{{ all_logrotate_service_tags }}"
+    - verification
+    - precheck
+
+# --- Block: Configure system mail alias for root ---
+
+- name: Configure system mail alias for root
+  block:
+    - name: Add {{ security_email }} to /etc/aliases
+      ansible.builtin.lineinfile:
+        path: /etc/aliases
+        regexp: '^root:'
+        line: "root: {{ security_email }}"
+        create: true
+
+    - name: Rebuild aliases database
+      ansible.builtin.command: newaliases
+      changed_when: false
+
+    - name: SUCCESS -> System mail alias for root configured successfully
+      ansible.builtin.debug:
+        msg: "System mail alias for root configured successfully."
+      tags:
+        - success
+        - success:stage
+
+  rescue:
+    - name: ERROR -> Failed to configure system mail alias for root
+      ansible.builtin.fail:
+        msg: "Failed to configure system mail alias for root."
+
+  tags:
+    - root_alias

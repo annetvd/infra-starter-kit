@@ -1,0 +1,23 @@
+# Enable OWASP Core Rule Set
+SecAction \
+ "id:900000,\
+  phase:1,\
+  nolog,\
+  pass,\
+  t:none,\
+  setvar:tx.crs_setup=1"
+
+# Request body limits
+SecRequestBodyAccess On
+SecRequestBodyLimit {{ crs_request_body_limit | default(13107200) }}
+SecRequestBodyNoFilesLimit {{ crs_request_no_files_limit | default(131072) }}
+
+# Response body limits
+SecResponseBodyAccess On
+SecResponseBodyLimit {{ crs_response_body_limit | default(5242880) }}
+
+# Anomaly scoring threshold
+SecDefaultAction "phase:2,log,auditlog,deny,status:403"
+
+# Enable specific rules
+SecRuleEngine {{ crs_rule_engine | default('On') }}

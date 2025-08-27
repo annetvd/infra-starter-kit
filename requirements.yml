@@ -1,0 +1,8 @@
+collections:
+  - name: community.mysql
+  - name: community.hashi_vault
+
+roles:
+  - name: robertdebock.bootstrap
+  - name: robertdebock.auditd
+  - name: debops-contrib.apparmor

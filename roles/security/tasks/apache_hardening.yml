@@ -1,0 +1,118 @@
+---
+- name: Configure Apache to listen on localhost:{{ apache_service.port }}
+  ansible.builtin.lineinfile:
+    path: /etc/apache2/ports.conf
+    regexp: "^Listen 80$"
+    line: "Listen 127.0.0.1:{{ apache_service.port }}"
+  notify:
+    - restart_apache_vm
+    - restart_apache_codespace
+  tags:
+    - config_port
+
+- name: Ensure AllowOverride All is active for {{ apache_service.path }}
+  ansible.builtin.lineinfile:
+    path: /etc/apache2/apache2.conf
+    regexp: '(<Directory {{ apache_service.path }}>)([^<]*)(AllowOverride) (\w+)'
+    line: '\1\n      AllowOverride All\n</Directory>'
+    backrefs: true
+    backup: true
+  notify:
+    - restart_apache_vm
+    - restart_apache_codespace
+  tags:
+    - config
+
+- name: Copy .htaccess file to block sensitive file types
+  ansible.builtin.copy:
+    dest: "{{ apache_service.path }}/.htaccess"
+    content: |
+      # Block hidden and sensitive files
+      <FilesMatch "^\.">
+        Require all denied
+      </FilesMatch>
+
+      <FilesMatch "\.(log|sql|bak|conf|ini|env|dist|yml|yaml|json|xml)$">
+        Require all denied
+      </FilesMatch>
+
+      # Block common documentation files
+      <FilesMatch "^(README|LICENSE|CHANGELOG)(\..*)?$">
+        Require all denied
+      </FilesMatch>
+
+      # Do not allow directory listing
+      Options -Indexes
+
+- name: Enable mod_headers
+  ansible.builtin.apache2_module:
+    name: headers
+    state: present
+  tags:
+    - apache
+    - mod_headers
+
+- name: Enable mod_rewrite for .htaccess
+  ansible.builtin.apache2_module:
+    name: rewrite
+    state: present
+  tags:
+    - apache
+    - mod_rewrite
+
+- name: Enable secure headers configuration
+  ansible.builtin.file:
+    src: "/etc/apache2/conf-available/security-headers.conf"
+    dest: /etc/apache2/conf-enabled/security-headers.conf
+    state: link
+  notify:
+    - restart_apache_vm
+    - restart_apache_codespace
+  tags:
+    - config
+
+- name: Add secure HTTP headers
+  ansible.builtin.copy:
+    dest: /etc/apache2/conf-available/security-headers.conf
+    content: |
+      Header always set X-Content-Type-Options "nosniff"
+      Header always set X-Frame-Options "SAMEORIGIN"
+      Header always set X-XSS-Protection "1; mode=block"
+      Header always set Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+      Header always set Referrer-Policy "no-referrer-when-downgrade"
+      Header always set Permissions-Policy "geolocation=(), microphone=()"
+  notify:
+    - restart_apache_vm
+    - restart_apache_codespace
+  tags:
+    - config
+
+- name: Add HTTPS redirection to .htaccess
+  ansible.builtin.copy:
+    dest: "{{ apache_service.path }}/.htaccess"
+    content: |
+      RewriteEngine On
+      RewriteCond %{HTTPS} off
+      RewriteRule (.*) https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+- name: Disable unnecessary Apache modules
+  ansible.builtin.apache2_module:
+    name: "{{ item }}"
+    state: absent
+  loop:
+    - status
+    - cgi
+  notify:
+    - restart_apache_vm
+    - restart_apache_codespace
+  tags:
+    - config
+
+- name: Limit HTTP methods to GET and POST only
+  ansible.builtin.blockinfile:
+    path: "{{ apache_service.path }}/.htaccess"
+    marker: "# {mark} ANSIBLE-LIMIT-METHODS"
+    block: |
+      <LimitExcept GET POST>
+        Require all denied
+      </LimitExcept>

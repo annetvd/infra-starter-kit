@@ -1,0 +1,248 @@
+# Note: This yml file includes configurations for UFW rules. Ensure UFW is installed on your system.
+# If you are not using UFW, please review the code and comment it out or manage it as you prefer.
+---
+- name: Install and start MySQL service
+  block:
+    - name: Install PyMySQL package
+      ansible.builtin.pip:
+        name: PyMySQL
+        executable: pip3
+      tags:
+        - install
+
+    - name: Install MySQL package
+      ansible.builtin.apt:
+        name: mysql-server
+        state: present
+        update_cache: true
+      tags:
+        - install
+
+    - name: Enable and start MySQL service (VM)
+      ansible.builtin.systemd:
+        name: mysql
+        enabled: true
+        state: started
+      when: not is_codespace
+
+    - name: Start MySQL service (Codespace)
+      ansible.builtin.shell: "service mysql start"
+      become: true
+      when: is_codespace
+      changed_when: false
+
+    - name: SUCCESS -> MySQL installed and started successfully
+      ansible.builtin.debug:
+        msg: "MySQL installed and started successfully."
+      tags:
+        - success
+        - success:stage
+      
+  rescue:
+    - name: ERROR -> MySQL installation or service start failed
+      ansible.builtin.fail:
+        msg: "MySQL installation or service start failed. Check package manager or service logs."
+
+  tags:
+    - mysql_install_block
+
+# --- Block: Secure MySQL installation ---
+
+- name: Secure MySQL installation
+  block:
+    - name: Check if MySQL root has a password
+      ansible.builtin.shell: |
+        mysql -uroot -e "SELECT 1;" >/dev/null 2>&1
+      register: mysql_root_check
+      ignore_errors: yes
+      changed_when: false
+      tags:
+        - user
+        - verify
+
+    - name: Set MySQL root password
+      community.mysql.mysql_user:
+        name: root
+        host: localhost
+        password: "{{ mysql_root_password }}"
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+        check_implicit_admin: yes
+        state: present
+      no_log: true
+      when: mysql_root_check.rc == 0
+      notify: reload_mysql_privileges
+      tags:
+        - user
+
+    - name: Remove anonymous MySQL users
+      community.mysql.mysql_user:
+        name: ""
+        host_all: true
+        state: absent
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+      no_log: true
+      notify: reload_mysql_privileges
+      tags:
+        - user
+
+    - name: Check if validate_password plugin is installed
+      community.mysql.mysql_query:
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+        query: "SELECT plugin_name FROM information_schema.plugins WHERE plugin_name='validate_password';"
+      register: validate_password_check
+      no_log: true
+      changed_when: false
+      tags:
+        - plugin
+        - verify
+
+    - name: Ensure validate_password plugin is loaded
+      community.mysql.mysql_query:
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+        query: "INSTALL PLUGIN validate_password SONAME 'validate_password.so';"
+      no_log: true
+      when: validate_password_check.query_result | length == 0
+      notify: reload_mysql_privileges
+      tags:
+        - plugin
+
+    - name: Enable validate_password plugin
+      community.mysql.mysql_variables:
+        variable: validate_password_policy
+        value: "STRONG"
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+      no_log: true
+      notify: reload_mysql_privileges
+      tags:
+        - config
+        - plugin
+
+    - name: Remove test database
+      community.mysql.mysql_db:
+        name: test
+        state: absent
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+      no_log: true
+      notify: reload_mysql_privileges
+      tags:
+        - database
+    
+    - name: Remove remote root login
+      community.mysql.mysql_user:
+        name: root
+        host: "{{ item }}"
+        state: absent
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+      loop:
+        - "%"
+        - "127.0.0.1"
+      no_log: true
+      notify: reload_mysql_privileges
+      tags:
+        - user
+    
+    - name: SUCCESS -> MySQL installation secured successfully
+      ansible.builtin.debug:
+        msg: "MySQL installation secured successfully."
+      tags:
+        - user
+        - config
+        - database
+        - plugin
+        - verify
+        - success
+        - success:stage
+
+  rescue:
+    - name: ERROR -> Failed to apply MySQL security configuration
+      ansible.builtin.fail:
+        msg: "An unexpected error occurred while applying MySQL security configuration. Check the logs before proceeding."
+      tags:
+        - user
+        - config
+        - database
+        - plugin
+        - verify
+
+  tags:
+    - mysql_security_block
+
+# --- Block: Manage MySQL bind-address configuration ---
+
+# Note: In this project I plan to use only local MySQL connections, so I have not configured SSL certificates. 
+# However, even for local connections, MySQL supports enabling encryption with
+#   require_secure_transport = ON
+# and enforcing it per user with:
+#   ALTER USER 'username'@'%' REQUIRE SSL;
+# This ensures that even someone with unauthorized local access cannot intercept or manipulate database traffic.
+
+- name: Manage MySQL bind-address configuration
+  block:
+    # Note: Initially I configured a foreign IP and planned to open a MySQL port via UFW when I was
+    # just starting to learn about host security, before knowing about Cloudflare Tunnel.
+    # I created the variable `mysql_bind_enabled` to determine whether to bind MySQL or not. However, 
+    # with Cloudflare Tunnel and a reverse proxy (Caddy), exposing the MySQL port is unnecessary and 
+    # only makes the host more vulnerable.
+    
+    - name: Configure bind-address
+      ansible.builtin.lineinfile:
+        path: "/etc/mysql/mysql.conf.d/mysqld.cnf"
+        regexp: '^bind-address'
+        line: "bind-address = 127.0.0.1"
+        state: "{{ 'present' if mysql_bind_enabled else 'absent' }}"
+        backup: yes
+      notify: 
+        - restart_mysql_vm
+        - restart_mysql_codespace
+      tags:
+        - config
+        - network
+
+    - name: Allow a foreign secure IP on UFW if not using strict bind-address
+      community.general.ufw:
+        rule: allow
+        proto: tcp
+        port: 3306
+        from_ip: "{{ foreign_node_api_ip }}"
+      when: not mysql_bind_enabled
+      tags:
+        - ufw
+        - network
+
+    - name: Deny all incoming MySQL connections via UFW if strict bind-address is enabled
+      community.general.ufw:
+        rule: deny
+        proto: tcp
+        port: 3306
+      when: mysql_bind_enabled
+      tags:
+        - ufw
+        - network
+
+    - name: SUCCESS -> MySQL bind-address configuration applied successfully
+      ansible.builtin.debug:
+        msg: "MySQL bind-address configuration applied successfully."
+      tags:
+        - config
+        - ufw
+        - network
+        - success
+        - success:stage
+
+  rescue:
+    - name: ERROR -> Failed to apply MySQL bind-address configuration
+      ansible.builtin.fail:
+        msg: "An unexpected error occurred while applying the MySQL bind-address configuration. Please check the logs for details."
+      tags:
+        - config
+        - ufw
+        - network
+
+  tags:
+    - mysql_bind_block

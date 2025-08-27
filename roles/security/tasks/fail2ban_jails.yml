@@ -1,0 +1,86 @@
+---
+- name: Configure Fail2Ban jails dynamically
+  ansible.builtin.copy:
+    dest: /etc/fail2ban/jail.local
+    content: |
+      {% for jail in fail2ban_jails %}
+      [{{ jail.jail_name }}]
+      enabled  = {{ jail.enabled | default('false') }}
+      filter   = {{ jail.filter | default(jail.jail_name) }}
+      logpath  = {{ jail.log_path }}
+      maxretry = {{ jail.maxretry | default(3) }}
+      bantime   = {{ jail.bantime | default(3600) }}
+      findtime  = {{ jail.findtime | default(3600) }}
+      action    = {{ jail.action | default('%(action_mwl)s') }}
+      destemail = {{ jail.destemail | default(security_email) }}
+      sender    = {{ jail.sender | default('noreply@' ~ postfix_domain) }}
+      ignoreip  = {{ jail.ignoreip | default('127.0.0.1 ::1 ' ~ foreign_node_api_ip) }}      
+      {% if jail.port is defined %}port = {{ jail.port }}{% endif %}
+
+      {% endfor %}
+  register: jail_config_result
+
+- name: Restart Fail2Ban for config validation (VM)
+  ansible.builtin.service:
+    name: fail2ban
+    state: restarted
+  when: not is_codespace and jail_config_result.changed
+
+- name: Restart Fail2Ban for config validation (Codespace)
+  ansible.builtin.command: "service fail2ban restart"
+  when: is_codespace and jail_config_result.changed
+
+# Ensure Fail2Ban is running and responding to client commands
+- name: Verify Fail2Ban is running and responsive
+  ansible.builtin.command: fail2ban-client status
+  register: fail2ban_status
+  changed_when: false
+  failed_when: fail2ban_status.rc != 0
+  tags:
+    - verification
+
+# Count the number of active jails to validate that the expected services are being protected
+- name: Verify active jails
+  ansible.builtin.set_fact:
+    jail_count: "{{ fail2ban_status.stdout_lines
+                    | select('search', 'Number of jail')
+                    | map('regex_replace', '.*Number of jail:\\s*([0-9]+).*', '\\1')
+                    | first | int }}"
+  changed_when: false
+  failed_when: (jail_count | int) != (fail2ban_jails_count | int)
+  tags:
+    - verification
+
+- name: Create Maildir directories for local testing (Codespace)
+  ansible.builtin.file:
+    path: "/home/codespace/Maildir/{{ item }}"
+    state: directory
+    owner: codespace
+    group: codespace
+    mode: '0755'
+  loop:
+    - cur
+    - new
+    - tmp
+  loop_control:
+    label: "/home/codespace/Maildir/{{ item }}"
+  when: is_codespace
+  tags:
+    - verification
+
+# Using a test IP for this trial; unbanning the IP is not required
+- name: Trigger test email for sshd jail
+  ansible.builtin.shell: fail2ban-client set sshd banip 192.0.2.0/24
+  register: fail2ban_test_email
+  changed_when: false
+  tags:
+    - verification
+    - test
+
+- name: Check if mail was delivered locally (Codespace)
+  ansible.builtin.shell: 'grep -q -F "Subject: [Fail2Ban]" /home/codespace/Maildir/new/*'
+  register: mail_check
+  changed_when: false
+  when: is_codespace
+  tags:
+    - verification

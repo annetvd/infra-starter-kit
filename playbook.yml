@@ -1,0 +1,26 @@
+---
+- name: Configure production server baseline
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Detect if running inside GitHub Codespaces
+      set_fact:
+        is_codespace: "{{ ansible_env.CODESPACES is defined }}"
+      tags:
+        - always
+        - env_detect
+
+  roles:
+    - role: security
+      vars:
+        merge_vars: true
+        # merge_vars_verified: true
+        system_user_ssh_public_key: "{{ lookup('community.hashi_vault.hashi_vault', 'secret=secret/data/ssh key=system_user_public_key')['system_user_public_key'] }}"
+        cloudflare_tunnel_token: "{{ lookup('community.hashi_vault.hashi_vault', 'secret=secret/data/cloudflare key=tunnel_token')['tunnel_token'] }}"
+
+  handlers:
+    - name: reload_systemd_daemon
+      ansible.builtin.systemd:
+        daemon_reload: yes
+      when: not is_codespace

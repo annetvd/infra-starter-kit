@@ -1,3 +1,11 @@
+-- =========================================================
+--  WARNING: DEMONSTRATION DATABASE DUMP
+--  This SQL dump is FULLY FUNCTIONAL and can be imported.
+--  However, it contains ONLY fictitious data and
+--  foreign keys that DO NOT represent real relationships.
+--  Generated with AI and inspired by schemas from my portfolio.
+-- =========================================================
+
 -- MariaDB dump 10.19  Distrib 10.11.8-MariaDB, for Linux (x86_64)
 --
 -- Host: localhost    Database: logbook
