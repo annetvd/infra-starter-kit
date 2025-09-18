@@ -60,17 +60,6 @@
     - apache
     - mod_rewrite
 
-- name: Enable secure headers configuration
-  ansible.builtin.file:
-    src: "/etc/apache2/conf-available/security-headers.conf"
-    dest: /etc/apache2/conf-enabled/security-headers.conf
-    state: link
-  notify:
-    - restart_apache_vm
-    - restart_apache_codespace
-  tags:
-    - config
-
 - name: Add secure HTTP headers
   ansible.builtin.copy:
     dest: /etc/apache2/conf-available/security-headers.conf
@@ -81,6 +70,17 @@
       Header always set Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
       Header always set Referrer-Policy "no-referrer-when-downgrade"
       Header always set Permissions-Policy "geolocation=(), microphone=()"
+  notify:
+    - restart_apache_vm
+    - restart_apache_codespace
+  tags:
+    - config
+
+- name: Enable secure headers configuration
+  ansible.builtin.file:
+    src: "/etc/apache2/conf-available/security-headers.conf"
+    dest: /etc/apache2/conf-enabled/security-headers.conf
+    state: link
   notify:
     - restart_apache_vm
     - restart_apache_codespace

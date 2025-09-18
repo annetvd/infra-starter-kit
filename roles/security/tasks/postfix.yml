@@ -117,3 +117,6 @@
         msg: "An error occurred while applying Postfix domain settings."
       tags:
         - config
+
+  tags:
+    - postfix

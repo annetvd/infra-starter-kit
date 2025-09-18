@@ -92,7 +92,8 @@
 
   tags:
     - mysql_import_precheck_block
-    - mysql_import
+    - mysql
+    - mysql_import_module
 
 # --- Block: Prepare MySQL database dumps and backups ---
 
@@ -144,7 +145,8 @@
 
   tags:
     - mysql_import_prepare_block
-    - mysql_import
+    - mysql
+    - mysql_import_module
 
 # --- Block: Import MySQL dumps and perform cleanup ---
 
@@ -250,4 +252,5 @@
 
   tags:
     - mysql_import_and_cleanup
-    - mysql_import
+    - mysql
+    - mysql_import_module

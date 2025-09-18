@@ -2,15 +2,17 @@
 - name: Include merge_vars tasks if enabled
   ansible.builtin.include_tasks: merge_vars.yml
   when: merge_vars
+  tags: [includes]
 
 - name: Stop playbook for variable merge verification
   meta: end_play
   when: merge_vars and not merge_vars_verified
+  tags: [includes]
 
 # System
 - name: Set up system security module
-  ansible.builtin.import_tasks: system.yml
-  tags: [system]
+  ansible.builtin.include_tasks: system.yml
+  tags: [system, includes]
 
 - name: DONE -> System security module applied successfully
   ansible.builtin.debug:
@@ -19,8 +21,8 @@
 
 # Postfix
 - name: Set up Postfix module
-  ansible.builtin.import_tasks: postfix.yml
-  tags: [postfix]
+  ansible.builtin.include_tasks: postfix.yml
+  tags: [postfix, includes]
 
 - name: DONE -> Postfix module applied successfully
   ansible.builtin.debug:
@@ -29,8 +31,8 @@
 
 # UFW
 - name: Set up UFW module
-  ansible.builtin.import_tasks: ufw.yml
-  tags: [ufw]
+  ansible.builtin.include_tasks: ufw.yml
+  tags: [ufw, includes]
 
 - name: DONE -> UFW module applied successfully
   ansible.builtin.debug:
@@ -39,16 +41,16 @@
 
 # MySQL
 - name: Set up MySQL install and hardening module
-  ansible.builtin.import_tasks: mysql_install_and_hardening.yml
-  tags: [mysql, mysql_install_module]
+  ansible.builtin.include_tasks: mysql_install_and_hardening.yml
+  tags: [mysql, mysql_install_module, includes]
 
 - name: Set up MySQL databases and users module
-  ansible.builtin.import_tasks: mysql_db_and_users.yml
-  tags: [mysql, mysql_db_users_module]
+  ansible.builtin.include_tasks: mysql_db_and_users.yml
+  tags: [mysql, mysql_db_users_module, includes]
 
 - name: Set up MySQL import databases module
-  ansible.builtin.import_tasks: mysql_import_db.yml
-  tags: [mysql, mysql_import_module]
+  ansible.builtin.include_tasks: mysql_import_db.yml
+  tags: [mysql, mysql_import_module, includes]
 
 - name: DONE -> MySQL module(s) applied successfully
   ansible.builtin.debug:
@@ -57,8 +59,8 @@
 
 # Apache2
 - name: Set up Apache2 and PHP module
-  ansible.builtin.import_tasks: apache_php.yml
-  tags: [apache]
+  ansible.builtin.include_tasks: apache_php.yml
+  tags: [apache, includes]
 
 - name: DONE -> Apache2 and PHP module applied successfully
   ansible.builtin.debug:
@@ -67,8 +69,8 @@
 
 # Node.js API
 - name: Set up Node.js API module
-  ansible.builtin.import_tasks: node_api.yml
-  tags: [node_api]
+  ansible.builtin.include_tasks: node_api.yml
+  tags: [node_api, includes]
 
 - name: DONE -> Node.js API module applied successfully
   ansible.builtin.debug:
@@ -77,8 +79,8 @@
 
 # Caddy
 - name: Set up Caddy module
-  ansible.builtin.import_tasks: caddy.yml
-  tags: [caddy]
+  ansible.builtin.include_tasks: caddy.yml
+  tags: [caddy, includes]
 
 - name: DONE -> Caddy module applied successfully
   ansible.builtin.debug:
@@ -87,12 +89,12 @@
 
 # Cloudflare Tunnel
 - name: Set up Cloudflared module
-  ansible.builtin.import_tasks: cloudflared.yml
-  tags: [cloudflared]
+  ansible.builtin.include_tasks: cloudflared.yml
+  tags: [cloudflared, includes]
 
 - name: Set up Cloudflare Tunnel module
-  ansible.builtin.import_tasks: cloudflare_tunnel.yml
-  tags: [cloudflare_tunnel]
+  ansible.builtin.include_tasks: cloudflare_tunnel.yml
+  tags: [cloudflare_tunnel, includes]
 
 - name: DONE -> Cloudflare Tunnel modules applied successfully
   ansible.builtin.debug:
@@ -101,8 +103,8 @@
 
 # Fail2ban
 - name: Set up Fail2ban module
-  ansible.builtin.import_tasks: fail2ban.yml
-  tags: [fail2ban]
+  ansible.builtin.include_tasks: fail2ban.yml
+  tags: [fail2ban, includes]
 
 - name: DONE -> Fail2ban module applied successfully
   ansible.builtin.debug:
@@ -189,8 +191,8 @@
 
 # Unattended-upgrades
 - name: Set up unattended-upgrades module
-  ansible.builtin.import_tasks: unattended-upgrades.yml
-  tags: [unattended-upgrades]
+  ansible.builtin.include_tasks: unattended-upgrades.yml
+  tags: [unattended-upgrades, includes]
 
 - name: DONE -> Unattended-upgrades module applied successfully
   ansible.builtin.debug:
@@ -199,8 +201,8 @@
 
 # Logrotate
 - name: Set up Logrotate module
-  ansible.builtin.import_tasks: logrotate.yml
-  tags: [logrotate]
+  ansible.builtin.include_tasks: logrotate.yml
+  tags: [logrotate, includes]
 
 - name: DONE -> Logrotate module applied successfully
   ansible.builtin.debug:

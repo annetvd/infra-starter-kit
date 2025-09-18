@@ -1,11 +1,11 @@
 ---
 - name: Install latest Cloudflared binary
   block:
-    - name: Download Cloudflared GPG key
-      ansible.builtin.get_url:
-        url: https://pkg.cloudflare.com/cloudflare-main.gpg
-        dest: /usr/share/keyrings/cloudflare-main.gpg
-        mode: '0644'
+    - name: Download and convert Cloudflared GPG key
+      ansible.builtin.shell: |
+        curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | gpg --dearmor -o /usr/share/keyrings/cloudflare-main.gpg
+      args:
+        creates: /usr/share/keyrings/cloudflare-main.gpg
       tags:
         - dependencies
         - install
@@ -32,8 +32,8 @@
       ansible.builtin.file:
         path: "{{ cloudflared_path }}"
         state: directory
-        owner: cloudflared
-        group: cloudflared
+        owner: root
+        group: root
         mode: '0755'
       tags:
         - verify
@@ -58,3 +58,4 @@
 
   tags:
     - cloudflared_install
+    - cloudflared

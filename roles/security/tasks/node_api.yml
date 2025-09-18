@@ -79,6 +79,7 @@
 
   tags:
     - node_env_setup
+    - node_api
 
 - name: Install Node.js with nvm
   block:
@@ -91,6 +92,7 @@
         update_cache: true
       tags:
         - dependencies
+        - install
 
     - name: Download and install nvm as root
       ansible.builtin.shell: |
@@ -99,6 +101,8 @@
         curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/{{ portfolio_service.nvm_version }}/install.sh | bash
       args:
         creates: "{{ portfolio_service.path }}/.nvm/nvm.sh"
+      tags:
+        - install
 
     - name: Install Node.js LTS version as root
       ansible.builtin.shell: |
@@ -109,6 +113,8 @@
       args:
         executable: /bin/bash
         creates: "{{ portfolio_service.path }}/.nvm/versions/node"
+      tags:
+        - install
 
     - name: Change ownership of NVM directory
       ansible.builtin.file:
@@ -131,8 +137,8 @@
   
   tags:
     - node_install
-    - install
     - nvm
+    - node_api
 
 - name: Setup Node.js auto-update environment
   block:
@@ -191,3 +197,4 @@
   tags:
     - node_auto_update
     - auto_update_env
+    - node_api

@@ -43,7 +43,7 @@
     - name: Ensure log file exists with correct permissions
       ansible.builtin.file:
         path: "{{ cloudflared_log_path }}/{{ cloudflare_tunnel_service.name }}/logs/cloudflared.log"
-        state: file
+        state: touch
         owner: "{{ cloudflare_tunnel_service.user }}"
         group: "{{ cloudflare_tunnel_service.group }}"
         mode: '0640'
@@ -72,6 +72,7 @@
 
   tags:
     - cloudflare_tunnel_env_setup
+    - cloudflare_tunnel
 
 # --- Block: Configure and verify Cloudflare tunnel service ---
 
@@ -146,3 +147,4 @@
 
   tags:
     - cloudflare_tunnel_service_setup
+    - cloudflare_tunnel

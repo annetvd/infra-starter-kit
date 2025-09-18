@@ -88,6 +88,7 @@
 
   tags:
     - privileged_users
+    - system
 
 - name: Harden SSH configuration
   block:
@@ -146,3 +147,4 @@
     - ssh
     - config
     - ssh_hardening
+    - system

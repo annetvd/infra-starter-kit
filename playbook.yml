@@ -24,3 +24,5 @@
       ansible.builtin.systemd:
         daemon_reload: yes
       when: not is_codespace
+      tags:
+        - cloudflare_tunnel

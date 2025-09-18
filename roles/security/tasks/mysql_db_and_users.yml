@@ -29,6 +29,8 @@
 
   tags:
     - mysql_db_create_block
+    - mysql
+    - mysql_db_users_module
 
 # --- Block: Create MySQL Users & Grants ---
 
@@ -71,3 +73,5 @@
   tags:
     - mysql_user_create_block
     - user
+    - mysql
+    - mysql_db_users_module

@@ -27,7 +27,6 @@
 
     - name: Start MySQL service (Codespace)
       ansible.builtin.shell: "service mysql start"
-      become: true
       when: is_codespace
       changed_when: false
 
@@ -45,6 +44,8 @@
 
   tags:
     - mysql_install_block
+    - mysql
+    - mysql_install_module
 
 # --- Block: Secure MySQL installation ---
 
@@ -104,7 +105,7 @@
         login_password: "{{ mysql_root_password }}"
         query: "INSTALL PLUGIN validate_password SONAME 'validate_password.so';"
       no_log: true
-      when: validate_password_check.query_result | length == 0
+      when: validate_password_check.query_result[0] | length == 0
       notify: reload_mysql_privileges
       tags:
         - plugin
@@ -172,6 +173,8 @@
 
   tags:
     - mysql_security_block
+    - mysql
+    - mysql_install_module
 
 # --- Block: Manage MySQL bind-address configuration ---
 
@@ -246,3 +249,5 @@
 
   tags:
     - mysql_bind_block
+    - mysql
+    - mysql_install_module

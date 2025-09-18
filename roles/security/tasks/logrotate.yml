@@ -33,6 +33,7 @@
   tags:
     - logrotate_install
     - "{{ all_logrotate_service_tags }}"
+    - logrotate
 
 # --- Block: Log file existence checks ---
 
@@ -107,6 +108,7 @@
   tags:
     - log_path_block
     - precheck
+    - logrotate
 
 # --- Block: Logrotate configuration tasks for services ---
 
@@ -155,6 +157,7 @@
 
   tags:
     - logrotate_deploy_block
+    - logrotate
     
 # --- Block: Simulate individual logrotate configurations (Codespace) ---
 
@@ -186,6 +189,7 @@
   tags:
     - logrotate_individual_test_block
     - verification
+    - logrotate
 
 # --- Block: Global Logrotate syntax test ---
 
@@ -216,6 +220,7 @@
     - "{{ all_logrotate_service_tags }}"
     - verification
     - precheck
+    - logrotate
 
 # --- Block: Configure system mail alias for root ---
 
@@ -246,3 +251,4 @@
 
   tags:
     - root_alias
+    - logrotate

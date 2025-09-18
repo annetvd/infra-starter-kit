@@ -35,6 +35,7 @@
 
   tags:
     - unattended_upgrades_install
+    - unattended-upgrades
 
 - name: Configure unattended-upgrades automatic updates and security settings
   block:
@@ -87,3 +88,4 @@
   
   tags:
     - unattended_upgrades_config
+    - unattended-upgrades

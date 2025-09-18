@@ -4,68 +4,94 @@
     name: postfix
     state: restarted
   when: not is_codespace
+  tags:
+    - postfix
 
 - name: restart_postfix_codespace
   ansible.builtin.command: "service postfix restart"
   changed_when: false
   when: is_codespace
+  tags:
+    - postfix
 
 - name: restart_ssh_vm
   ansible.builtin.systemd:
     name: ssh
     state: restarted
   when: not is_codespace
+  tags:
+    - ssh
 
 - name: restart_ssh_codespace
   ansible.builtin.command: "service ssh restart"
   changed_when: false
   when: is_codespace
+  tags:
+    - ssh
 
 - name: restart_apache_vm
   ansible.builtin.systemd:
     name: apache2
     state: restarted
   when: not is_codespace
+  tags:
+    - apache
 
 - name: restart_apache_codespace
   ansible.builtin.command: "service apache2 restart"
   changed_when: false
   when: is_codespace
+  tags:
+    - apache
 
 - name: reload_mysql_privileges
   ansible.builtin.command: >
                     mysqladmin --user=root --password={{ mysql_root_password }} reload
   no_log: true
+  tags:
+    -mysql
 
 - name: restart_mysql_vm
   ansible.builtin.systemd:
     name: mysql
     state: restarted
   when: not is_codespace
+  tags:
+    - mysql
 
 - name: restart_mysql_codespace
   ansible.builtin.command: "service mysql restart"
   changed_when: false
   when: is_codespace
+  tags:
+    - mysql
 
 - name: restart_auditd_vm
   ansible.builtin.systemd:
     name: auditd
     state: restarted
   when: not is_codespace
+  tags:
+    - auditd
 
 - name: restart_auditd_codespace
   ansible.builtin.command: "service auditd restart"
   changed_when: false
   when: is_codespace
+  tags:
+    - auditd
 
 - name: restart_unattended-upgrades_vm
   ansible.builtin.systemd:
     name: unattended-upgrades
     state: restarted
   when: not is_codespace
+  tags:
+    - unattended-upgrades
 
 - name: restart_unattended-upgrades_codespace
   ansible.builtin.command: "service unattended-upgrades restart"
   changed_when: false
   when: is_codespace
+  tags:
+    - unattended-upgrades

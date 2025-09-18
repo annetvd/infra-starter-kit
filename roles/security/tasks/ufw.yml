@@ -39,6 +39,7 @@
   
   tags:
     - ufw_install
+    - ufw
 
 - name: Set UFW rules and policies
   block:
@@ -91,3 +92,4 @@
   
   tags:
     - ufw_rules
+    - ufw

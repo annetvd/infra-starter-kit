@@ -1,8 +1,11 @@
 # 🧰 Infra Starter Kit: Production Web Services and Server Security Setup with Ansible
+
+![Short demonstration video showing the playbook running and executing each task.](docs/media/overview-playbook-demo.gif)
+
 This repository contains a **developing Ansible project** aimed at configuring a remote host as part of migrating my web portfolio to an **Oracle Cloud** instance running **Ubuntu 22.04**.  
 The playbook is designed to run reproducibly in **GitHub Codespaces** and automates the installation and configuration of essential services such as **MySQL**, **Apache**, and **Node.js**, along with a set of security measures.
 
-One of the most notable features of this project is that it is designed to operate **without opening inbound ports, without a public IP, and without exposing the network**. Service exposure is handled exclusively through a **Cloudflare Tunnel**, using **Caddy** as a reverse proxy.
+The primary feature of this project is that the resulting host configuration is designed to operate **without opening inbound ports, without a public IP, and without exposing the network**. Service exposure is handled exclusively through a **Cloudflare Tunnel**, using **Caddy** as a reverse proxy.
 
 This configuration is intentionally limited to a single server, as it is designed to meet the needs of this specific project while keeping the code modular and easy to adapt if requirements change.
 
@@ -130,7 +133,7 @@ In a separate terminal tab, export the environment variables using the specified
 
 ```bash
 export VAULT_ADDR="http://127.0.0.1:8200"
-export VAULT_TOKEN="s.XXXXXXXXXXXXXXXXXXXX"
+export VAULT_TOKEN="XXXXXXXXXXXXXXXXXXXX"
 ```
 
 Initialize required secrets:
@@ -176,11 +179,27 @@ ansible-playbook -i inventory/local.ini playbook.yml --skip-tags install,success
 
 <br>
 
-When targeting specific tasks, include the always tag to ensure environment detection runs:
+When targeting specific tasks, include the **always** tag to ensure environment detection runs:
 
 ```bash
 ansible-playbook -i inventory/local.ini playbook.yml --tags always,ufw --skip-tags install,success
 ```
+
+<br>
+
+You may also notice a special **includes** tag in this playbook. This tag exists to ensure that when you target a lower-level tag like `install`, Ansible actually evaluates the imported tasks and decides which ones to run or skip.
+
+For example, `ufw` is a high-level tag, it is defined on the include itself, so when you run `--tags ufw`, Ansible will automatically pull in all tasks related to UFW. However, keep in mind that even a high-level tag like `ufw` might be used as a "low-level" tag inside other `include_tasks` (for example, within a `mysql` or `logrotate` module).
+
+Because of this, if you only target a low-level tag like `install` and do not specify any high-level tag (like `apache`, `caddy`, or `mysql`) that would normally import those tasks, they will never be included in the play execution.
+
+That’s why, whenever you are running a subset of tasks with `--tags`, it’s a good practice to also include the special `includes` tag. This ensures Ansible first loads all relevant task files, so it can decide which ones to execute or skip based on your selected tags:
+
+```bash
+ansible-playbook -i inventory/local.ini playbook.yml --tags always,includes,install
+```
+
+<br>
 
 > **Warning:** Many services are interconnected (e.g., Postfix + Fail2ban, Apache + PHP, global Logrotate), running only specific tags (e.g., fail2ban) without having the dependent services installed or configured may lead to errors (e.g., missing log paths). It is recommended to run the **entire playbook at least once** on a fresh Codespace, then re-run as needed.
 
@@ -383,4 +402,23 @@ This occurs because the fail2ban socket from the previous session still exists, 
 sudo rm /var/run/fail2ban/fail2ban.sock
 ```
 
-After this, starting Fail2ban should work normally.
+After this, starting Fail2ban should work normally.<br><br>
+
+### Expected Auditd Load Rules Handler Failure (Codespaces)
+When running the playbook in Codespaces, the `Load rules` handler from the `robertdebock.auditd` role will always fail with a `non-zero return code`.
+
+![Auditd Load Rules error in Codespaces](docs/media/codespace-auditd-load-rules-error.png)
+
+This is expected because `augenrules --load` requires a full system environment and does not work inside containers.
+
+The playbook will still apply all configuration changes correctly, so this failure can be safely ignored.
+
+If you prefer to suppress the error message entirely, you can comment out the `notify` line that triggers the handler in:
+
+```bash
+/home/codespace/.ansible/roles/robertdebock.auditd/handlers/main.yml
+```
+
+<br>
+
+> **Note:** This only affects Codespaces and other containerized environments. On full VMs or bare-metal systems, the handler should remain active so that new rules are applied immediately.
