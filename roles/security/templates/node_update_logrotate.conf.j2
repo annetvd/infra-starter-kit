@@ -1,9 +1,0 @@
-{{ portfolio_service.log_path }}/logs_update/node_update.log {
-    weekly
-    size 10M
-    rotate 4
-    compress
-    missingok
-    notifempty
-    create 0640 {{ portfolio_service.user }} {{ portfolio_service.group }}
-}

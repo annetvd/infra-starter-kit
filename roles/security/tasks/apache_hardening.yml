@@ -10,55 +10,22 @@
   tags:
     - config_port
 
-- name: Ensure AllowOverride All is active for {{ apache_service.path }}
-  ansible.builtin.lineinfile:
-    path: /etc/apache2/apache2.conf
-    regexp: '(<Directory {{ apache_service.path }}>)([^<]*)(AllowOverride) (\w+)'
-    line: '\1\n      AllowOverride All\n</Directory>'
-    backrefs: true
-    backup: true
-  notify:
-    - restart_apache_vm
-    - restart_apache_codespace
-  tags:
-    - config
-
-- name: Copy .htaccess file to block sensitive file types
-  ansible.builtin.copy:
-    dest: "{{ apache_service.path }}/.htaccess"
-    content: |
-      # Block hidden and sensitive files
-      <FilesMatch "^\.">
-        Require all denied
-      </FilesMatch>
-
-      <FilesMatch "\.(log|sql|bak|conf|ini|env|dist|yml|yaml|json|xml)$">
-        Require all denied
-      </FilesMatch>
-
-      # Block common documentation files
-      <FilesMatch "^(README|LICENSE|CHANGELOG)(\..*)?$">
-        Require all denied
-      </FilesMatch>
-
-      # Do not allow directory listing
-      Options -Indexes
-
 - name: Enable mod_headers
   ansible.builtin.apache2_module:
     name: headers
     state: present
   tags:
-    - apache
     - mod_headers
+    - htaccess
+    - apache_virtualhost
 
 - name: Enable mod_rewrite for .htaccess
   ansible.builtin.apache2_module:
     name: rewrite
     state: present
   tags:
-    - apache
     - mod_rewrite
+    - htaccess
 
 - name: Add secure HTTP headers
   ansible.builtin.copy:
@@ -70,30 +37,24 @@
       Header always set Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
       Header always set Referrer-Policy "no-referrer-when-downgrade"
       Header always set Permissions-Policy "geolocation=(), microphone=()"
+    owner: root
+    group: root
+    mode: '0644'
   notify:
-    - restart_apache_vm
-    - restart_apache_codespace
+    - reload_apache_vm
+    - reload_apache_codespace
   tags:
     - config
 
 - name: Enable secure headers configuration
-  ansible.builtin.file:
-    src: "/etc/apache2/conf-available/security-headers.conf"
-    dest: /etc/apache2/conf-enabled/security-headers.conf
-    state: link
+  ansible.builtin.command: a2enconf security-headers.conf
+  args:
+    creates: /etc/apache2/conf-enabled/security-headers.conf
   notify:
-    - restart_apache_vm
-    - restart_apache_codespace
+    - reload_apache_vm
+    - reload_apache_codespace
   tags:
     - config
-
-- name: Add HTTPS redirection to .htaccess
-  ansible.builtin.copy:
-    dest: "{{ apache_service.path }}/.htaccess"
-    content: |
-      RewriteEngine On
-      RewriteCond %{HTTPS} off
-      RewriteRule (.*) https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 
 - name: Disable unnecessary Apache modules
   ansible.builtin.apache2_module:
@@ -108,11 +69,91 @@
   tags:
     - config
 
-- name: Limit HTTP methods to GET and POST only
-  ansible.builtin.blockinfile:
-    path: "{{ apache_service.path }}/.htaccess"
-    marker: "# {mark} ANSIBLE-LIMIT-METHODS"
-    block: |
-      <LimitExcept GET POST>
+- name: Configure global Apache security settings
+  ansible.builtin.copy:
+    dest: /etc/apache2/conf-available/hardening.conf
+    content: |
+      <Files ".htaccess">
+        Require all granted
+      </Files>
+
+      # Block hidden and sensitive files
+      <FilesMatch "^\.">
         Require all denied
-      </LimitExcept>
+      </FilesMatch>
+
+      <FilesMatch "\.(log|sql|bak|conf|ini|env|dist|yml|yaml|json|xml|lock)$">
+        Require all denied
+      </FilesMatch>
+
+      # Block common documentation files
+      <FilesMatch "^(README|LICENSE|CHANGELOG)(\..*)?$">
+        Require all denied
+      </FilesMatch>
+
+      # Disable directory listing
+      Options -Indexes
+
+      # Hide server information
+      ServerTokens Prod
+      ServerSignature Off
+  notify:
+    - reload_apache_vm
+    - reload_apache_codespace
+  tags:
+    - config
+
+- name: Enable hardening configuration
+  ansible.builtin.command: a2enconf hardening.conf
+  args:
+    creates: /etc/apache2/conf-enabled/hardening.conf
+  notify:
+    - reload_apache_vm
+    - reload_apache_codespace
+  tags:
+    - config
+
+# --- Reverse Proxy IP Setup ---
+
+# Note: These tasks configure Apache to correctly handle real client IPs and HTTPS when behind 
+# Caddy + Cloudflare Tunnel. Without them, Apache sees only Caddy's local IP and treats requests as HTTP. 
+# Not needed for direct Apache access; if the proxy runs on another internal host, 
+# adjust RemoteIPInternalProxy accordingly.
+
+- name: Enable Apache mod_remoteip
+  ansible.builtin.apache2_module:
+    name: remoteip
+    state: present
+  tags:
+    - mod_remoteip
+    - apache_virtualhost
+
+- name: Configure Apache RemoteIP globally
+  ansible.builtin.copy:
+    dest: /etc/apache2/conf-available/remoteip.conf
+    content: |
+      # Trust Caddy on 127.0.0.1 and replace it with the real client IP from X-Forwarded-For.
+      RemoteIPHeader X-Forwarded-For
+      RemoteIPInternalProxy 127.0.0.1
+
+      # Ensure Apache trusts the Caddy reverse proxy and correctly interprets forwarded requests as HTTPS.
+      SetEnvIfExpr "%{REMOTE_ADDR} == '127.0.0.1' && req('X-Forwarded-Proto') == 'https'" HTTPS=on
+  notify:
+    - reload_apache_vm
+    - reload_apache_codespace
+  tags:
+    - mod_remoteip
+    - config
+    - apache_virtualhost
+
+- name: Enable remoteip.conf
+  ansible.builtin.command: a2enconf remoteip.conf
+  args:
+    creates: /etc/apache2/conf-enabled/remoteip.conf
+  notify:
+    - reload_apache_vm
+    - reload_apache_codespace
+  tags:
+    - mod_remoteip
+    - config
+    - apache_virtualhost

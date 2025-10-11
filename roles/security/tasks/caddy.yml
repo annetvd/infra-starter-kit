@@ -39,36 +39,12 @@
         - logrotate
         - caddy_logs
 
-    - name: Create directory for CSP reports and set permissions
-      ansible.builtin.file:
-        path: "{{ caddy_proxy.csp_reports_log_path }}"
-        state: directory
-        owner: caddy
-        group: caddy
-        mode: '0750'
-      tags:
-        - logrotate
-        - caddy_csp_report_logs
-
-    - name: Enable and start Caddy service (VM)
-      ansible.builtin.systemd:
-        name: caddy
-        enabled: true
-        state: started
-      when: not is_codespace
-
-    - name: Start caddy service (Codespace)
-      ansible.builtin.command: "caddy start --config /dev/null"
-      when: is_codespace
-      changed_when: false
-
     - name: SUCCESS -> Caddy installed and service configured successfully
       ansible.builtin.debug:
         msg: "Caddy installed and service configured successfully."
       tags:
         - logrotate
         - caddy_logs
-        - caddy_csp_report_logs
         - success
         - success:stage
   
@@ -79,7 +55,6 @@
       tags:
         - logrotate
         - caddy_logs
-        - caddy_csp_report_logs
 
   tags:
     - caddy

@@ -1,0 +1,31 @@
+---
+# ====================================================
+# Apache (configurable)
+# ====================================================
+apache_writable_rel_paths:
+  - path: public_html/awococado/FacturasAporta/FacturasPDF
+    require_all_denied: true
+  - path: public_html/awococado/FacturasAporta/FacturasXML
+    require_all_denied: true
+  - path: public_html/awococado/Cobros/CobrosPDF
+    require_all_denied: true
+  - path: public_html/awococado/Cobros/CobrosXML
+    require_all_denied: true
+  - path: public_html/awococado/Ingresos/ReportesPDF
+    require_all_denied: true
+  - path: public_html/awococado/Backups
+    require_all_denied: true
+  - path: public_html/awococado/Imagenes
+
+# ====================================================
+# Caddy (configurable)
+# ====================================================
+css_cdn_sources:
+  - https://cdn.jsdelivr.net
+  - https://fonts.googleapis.com
+  - https://fonts.gstatic.com
+
+# ====================================================
+# Auditd (configurable)
+# ====================================================
+custom_audit_rules: []

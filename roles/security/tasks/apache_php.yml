@@ -7,7 +7,9 @@
           - apache2
           - php
           - php-mysql
+          - php-simplexml
           - libapache2-mod-php
+          - php-mbstring
         state: present
         update_cache: true
       tags:
@@ -119,8 +121,8 @@
     
     - name: Configure OWASP CRS with custom template
       ansible.builtin.template:
-        src: "{{ role_path }}/templates/crs-setup.conf.j2"
-        dest: "/etc/modsecurity/crs-setup.conf"
+        src: crs-setup.conf.j2
+        dest: "/etc/modsecurity/rules/crs-setup.conf"
         owner: root
         group: root
         mode: '0644'
@@ -165,15 +167,29 @@
       tags:
         - success
         - success:stage
+        - mod_remoteip
+        - config
+        - apache_virtualhost
+        - config_port
+        - mod_headers
+        - htaccess
+        - mod_rewrite
   
   rescue:
     - name: ERROR -> Apache hardening configuration failed
       ansible.builtin.fail:
         msg: "An error occurred while applying Apache hardening. Please check the 'apache_hardening.yml' tasks."
+      tags:
+        - mod_remoteip
+        - config
+        - apache_virtualhost
+        - config_port
+        - mod_headers
+        - htaccess
+        - mod_rewrite
 
   tags:
     - apache_hardening
-    - htaccess
     - apache
 
 - name: Apply PHP hardening configurations
@@ -202,7 +218,7 @@
   block:
     - name: Remove default Apache index page
       ansible.builtin.file:
-        path: "/var/www/html/index.html"
+        path: "{{ apache_service.path }}/index.html"
         state: absent
       
     - name: Remove default Apache site example link

@@ -1,22 +1,28 @@
+---
 galaxy_info:
   author: Annet Vargas Dueñas
   description: >
     Role to configure a production server baseline for personal projects.
-    Configures security services, log rotation for system and application logs,
-    and basic hardening of SSH, AppArmor, UFW, Fail2ban, Aduditd, Apache, PHP-FPM, MySQL, Node.js API, Caddy, and Cloudflare Tunnel.
+    Works in conjunction with the runtime_setup role: while each role performs distinct tasks,
+    they complement and depend on each other to fully configure a Node.js API, Apache, Caddy as a reverse proxy,
+    auditd, and related services. This role handles security services, log rotation for system and application logs,
+    and basic hardening of SSH, AppArmor, UFW, Fail2ban, Apache, PHP-FPM, MySQL, Node.js API, Caddy, and Cloudflare Tunnel.
     Intended for personal use; while functional, it is in testing and not guaranteed to be production-ready.
   license: MIT
-  min_ansible_version: 0.1.0
+  min_ansible_version: 2.13
   platforms:
     - name: Ubuntu
       versions:
-        - jammy
-  categories:
+        - 22.04
+  galaxy_tags:
+    - system
     - security
     - baseline
+    - monitoring
+    - web
+    - infrastructure
+    - logging
+    - nodejs
   collections:
     - community.mysql
     - community.hashi_vault
-
-dependencies:
-  - robertdebock.bootstrap

@@ -22,7 +22,7 @@ The project is custom-designed for my web portfolio (publicly available on my Gi
 
 ### Features implemented up to the latest commit:
 - SSH and system users  
-- Postfix  
+- Exim4
 - UFW  
 - Fail2ban  
 - Auditd  
@@ -133,14 +133,15 @@ In a separate terminal tab, export the environment variables using the specified
 
 ```bash
 export VAULT_ADDR="http://127.0.0.1:8200"
-export VAULT_TOKEN="XXXXXXXXXXXXXXXXXXXX"
+export VAULT_TOKEN="xxx.xxxxxxxxxxxxxxxxx"
 ```
 
 Initialize required secrets:
 
 ```bash
-vault kv put secret/cloudflare tunnel_token="my_demo_token"
-vault kv put secret/ssh system_user_public_key="ssh-rsa AAAAB3Nza..."
+vault kv put secret/ssh system_user_public_key="ssh-rsa xxxxxxxxxxxxx..."
+vault kv put secret/exim4 email_app_password="xxxx xxxx xxxx xxxx"
+vault kv put secret/cloudflare tunnel_token="my_token"
 ```
 
 <br>
@@ -149,7 +150,7 @@ vault kv put secret/ssh system_user_public_key="ssh-rsa AAAAB3Nza..."
 Run the playbook using the local inventory:
 
 ```bash
-ansible-playbook -i inventory/local.ini playbook.yml
+ansible-playbook -i inventory/local.ini security.yml
 ```
 
 <br>
@@ -163,8 +164,8 @@ This playbook is filled with tags to make testing and reusing specific component
 Example: run the playbook without success messages:
 
 ```bash
-ansible-playbook -i inventory/local.ini playbook.yml --skip-tags success
-ansible-playbook -i inventory/local.ini playbook.yml --skip-tags success:stage
+ansible-playbook -i inventory/local.ini security.yml --skip-tags success
+ansible-playbook -i inventory/local.ini security.yml --skip-tags success:stage
 ```
 
 <br>
@@ -172,7 +173,7 @@ ansible-playbook -i inventory/local.ini playbook.yml --skip-tags success:stage
 Example: skip package installation for faster runs (useful when re-running after initial setup):
 
 ```bash
-ansible-playbook -i inventory/local.ini playbook.yml --skip-tags install,success:stage
+ansible-playbook -i inventory/local.ini security.yml --skip-tags install,success:stage
 ```
 
 > **Note:** Even though Ansible is idempotent (it won’t reinstall packages that are already present), package installation tasks still take time to run because Ansible needs to check the current state of each package. Skipping them on subsequent runs can significantly reduce execution time.
@@ -182,7 +183,7 @@ ansible-playbook -i inventory/local.ini playbook.yml --skip-tags install,success
 When targeting specific tasks, include the **always** tag to ensure environment detection runs:
 
 ```bash
-ansible-playbook -i inventory/local.ini playbook.yml --tags always,ufw --skip-tags install,success
+ansible-playbook -i inventory/local.ini security.yml --tags always,ufw --skip-tags install,success
 ```
 
 <br>
@@ -196,12 +197,12 @@ Because of this, if you only target a low-level tag like `install` and do not sp
 That’s why, whenever you are running a subset of tasks with `--tags`, it’s a good practice to also include the special `includes` tag. This ensures Ansible first loads all relevant task files, so it can decide which ones to execute or skip based on your selected tags:
 
 ```bash
-ansible-playbook -i inventory/local.ini playbook.yml --tags always,includes,install
+ansible-playbook -i inventory/local.ini security.yml --tags always,includes,install
 ```
 
 <br>
 
-> **Warning:** Many services are interconnected (e.g., Postfix + Fail2ban, Apache + PHP, global Logrotate), running only specific tags (e.g., fail2ban) without having the dependent services installed or configured may lead to errors (e.g., missing log paths). It is recommended to run the **entire playbook at least once** on a fresh Codespace, then re-run as needed.
+> **Warning:** Many services are interconnected (e.g., Exim4 + Fail2ban, Apache + PHP, global Logrotate), running only specific tags (e.g., fail2ban) without having the dependent services installed or configured may lead to errors (e.g., missing log paths). It is recommended to run the **entire playbook at least once** on a fresh Codespace, then re-run as needed.
 
 <br>
 
@@ -340,7 +341,7 @@ The screenshots below show the information Cloudflare receives from the Codespac
 <br>
 
 ### Detecting Codespaces Environment
-The `playbook.yml` includes a task to detect if the playbook is being **executed from a GitHub Codespace**:
+The `security.yml` playbook includes a task to detect if the playbook is being **executed from a GitHub Codespace**:
 
 ```yaml
 - name: Detect if running inside GitHub Codespaces
@@ -378,13 +379,13 @@ To identify and clean these hidden characters:
 
 **1. Display hidden characters using:**
 ```bash
-sudo cat -A /workspaces/infra-starter-kit/roles/security/files/logrotate_conf_file.conf
+sudo cat -A ./roles/security/files/logrotate_conf_file.conf
 ```
 Line endings should appear as `$` at the end of each line.<br><br>
 
 **2. Remove problematic carriage returns using:**
 ```bash
-sudo sed -i 's/\r$//' /workspaces/infra-starter-kit/roles/security/files/logrotate_conf_file.conf
+sudo sed -i 's/\r$//' ./roles/security/files/logrotate_conf_file.conf
 ```
 
 <br>

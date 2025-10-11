@@ -1,18 +1,27 @@
 ---
-- name: restart_postfix_vm
+- name: rebuild_exim4_configuration
+  command: update-exim4.conf
+  changed_when: false
+  tags:
+    - exim4
+    - relay_settings
+
+- name: reload_exim4_vm
   ansible.builtin.systemd:
-    name: postfix
-    state: restarted
+    name: exim4
+    state: reloaded
   when: not is_codespace
   tags:
-    - postfix
+    - exim4
+    - relay_settings
 
-- name: restart_postfix_codespace
-  ansible.builtin.command: "service postfix restart"
+- name: reload_exim4_codespace
+  ansible.builtin.command: "service exim4 reload"
   changed_when: false
   when: is_codespace
   tags:
-    - postfix
+    - exim4
+    - relay_settings
 
 - name: restart_ssh_vm
   ansible.builtin.systemd:
@@ -44,6 +53,21 @@
   tags:
     - apache
 
+- name: reload_apache_vm
+  ansible.builtin.systemd:
+    name: apache2
+    state: reloaded
+  when: not is_codespace
+  tags:
+    - apache
+
+- name: reload_apache_codespace
+  ansible.builtin.command: "service apache2 reload"
+  changed_when: false
+  when: is_codespace
+  tags:
+    - apache
+
 - name: reload_mysql_privileges
   ansible.builtin.command: >
                     mysqladmin --user=root --password={{ mysql_root_password }} reload
@@ -65,21 +89,6 @@
   when: is_codespace
   tags:
     - mysql
-
-- name: restart_auditd_vm
-  ansible.builtin.systemd:
-    name: auditd
-    state: restarted
-  when: not is_codespace
-  tags:
-    - auditd
-
-- name: restart_auditd_codespace
-  ansible.builtin.command: "service auditd restart"
-  changed_when: false
-  when: is_codespace
-  tags:
-    - auditd
 
 - name: restart_unattended-upgrades_vm
   ansible.builtin.systemd:

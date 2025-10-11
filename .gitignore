@@ -1,1 +1,4 @@
 changes.patch
+deploy/
+roles/security/files/aw_dump.sql
+roles/security/files/logbook_dump.sql

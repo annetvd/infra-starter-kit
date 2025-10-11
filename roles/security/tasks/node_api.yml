@@ -29,11 +29,11 @@
         state: directory
         owner: "{{ portfolio_service.user }}"
         group: "{{ portfolio_service.group }}"
-        mode: '0700'
+        mode: '0500'
       tags:
         - permissions
 
-    - name: Create the application log directory
+    - name: Ensure application log directory exists
       ansible.builtin.file:
         path: "{{ portfolio_service.log_path }}"
         state: directory
@@ -44,7 +44,7 @@
         - permissions
         - logrotate
 
-    - name: Ensure log file exists with correct permissions
+    - name: Ensure log files exist with correct permissions
       ansible.builtin.file:
         path: "{{ item }}"
         state: touch
@@ -94,9 +94,16 @@
         - dependencies
         - install
 
+    # Note: In this project, for my personal and small-scale projects and without prior experience with 
+    # .service files, I started with the idea of "capsules" where Node is fully restricted and the binary 
+    # is kept inside the working directory. With the knowledge I have now, for future projects I plan to 
+    # either separate the binary from the working directory or use a general installation depending on the 
+    # project requirements. I want to make clear that this is not following the standard procedure, 
+    # but I intend to correct it in future projects and it does not affect the security of this service.
+
     - name: Download and install nvm as root
       ansible.builtin.shell: |
-        export NVM_DIR="{{ portfolio_service.path }}/.nvm"
+        NVM_DIR="{{ portfolio_service.path }}/.nvm"
         mkdir -p "$NVM_DIR"
         curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/{{ portfolio_service.nvm_version }}/install.sh | bash
       args:
@@ -106,10 +113,13 @@
 
     - name: Install Node.js LTS version as root
       ansible.builtin.shell: |
-        export NVM_DIR="{{ portfolio_service.path }}/.nvm"
+        NVM_DIR="{{ portfolio_service.path }}/.nvm"
         source "$NVM_DIR/nvm.sh"
         nvm install {{ portfolio_service.node_version }}
         nvm alias default {{ portfolio_service.node_version }}
+        current_node_vrs="$(nvm current)"
+        ln -s "$NVM_DIR/versions/node/$current_node_vrs" \
+          "{{ portfolio_service.path }}/.nvm/versions/node/default"
       args:
         executable: /bin/bash
         creates: "{{ portfolio_service.path }}/.nvm/versions/node"
@@ -140,27 +150,44 @@
     - nvm
     - node_api
 
+# Note: This uses the `node_manager` variable to maintain a general Node.js manager path under root.
+# This path stores update scripts, handles Node.js version upgrades per service, and centralizes logs.
+# It allows managing isolated Node.js installations for each service while keeping a single control point.
+# This design is intentional and optimized for future small-scale showcase projects.
+
 - name: Setup Node.js auto-update environment
   block:
-    - name: Ensure scripts and logs dirs exist
+    - name: Ensure Node manager log directories exist
       ansible.builtin.file:
         path: "{{ item }}"
         state: directory
-        owner: "{{ portfolio_service.user }}"
-        group: "{{ portfolio_service.group }}"
+        owner: root
+        group: root
+        mode: '0750'
+      loop:
+        - "{{ node_manager.log_path }}"
+        - "{{ node_manager.log_path }}/{{ portfolio_service.name }}"
+      tags:
+        - logrotate
+
+    - name: Ensure Node manager scripts directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
         mode: "0700"
       loop:
-        - "/opt/{{ portfolio_service.name }}/scripts"
-        - "{{ portfolio_service.log_path }}/logs_update"
-      tags:
-        - node_auto_update_dirs
+        - "{{ node_manager.prefix }}"
+        - "{{ node_manager.prefix }}/{{ portfolio_service.name }}"
+        - "{{ node_manager.prefix }}/{{ portfolio_service.name }}/scripts"
 
     - name: Install Node auto-update script
       ansible.builtin.template:
         src: "update_node.sh.j2"
-        dest: "/opt/{{ portfolio_service.name }}/scripts/update_node.sh"
-        owner: "{{ portfolio_service.user }}"
-        group: "{{ portfolio_service.group }}"
+        dest: "{{ node_manager.prefix }}/{{ portfolio_service.name }}/scripts/update_node.sh"
+        owner: root
+        group: root
         mode: "0700"
       tags:
         - node_auto_update_script
@@ -172,7 +199,7 @@
       ansible.builtin.cron:
         name: "Node.js auto-update for {{ portfolio_service.name }}"
         user: root
-        job: "/opt/{{ portfolio_service.name }}/scripts/update_node.sh"
+        job: "{{ node_manager.prefix }}/{{ portfolio_service.name }}/scripts/update_node.sh"
         minute: 0
         hour: 0
         state: present
@@ -181,7 +208,6 @@
       ansible.builtin.debug:
         msg: "Node.js auto-update environment for {{ portfolio_service.name }} set up successfully."
       tags:
-        - node_auto_update_dirs
         - node_auto_update_script
         - success
         - success:stage
@@ -191,7 +217,6 @@
       ansible.builtin.fail:
         msg: "Node.js auto-update environment setup failed. Check logs, permissions, and template files."
       tags:
-        - node_auto_update_dirs
         - node_auto_update_script
         
   tags:

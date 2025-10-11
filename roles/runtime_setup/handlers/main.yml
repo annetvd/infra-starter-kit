@@ -1,0 +1,44 @@
+- name: reload_apache_vm
+  ansible.builtin.systemd:
+    name: apache2
+    state: reloaded
+  when: not is_codespace
+  tags:
+    - apache
+
+- name: reload_apache_codespace
+  ansible.builtin.command: "service apache2 reload"
+  changed_when: false
+  when: is_codespace
+  tags:
+    - apache
+
+- name: reload_caddy_vm
+  ansible.builtin.systemd:
+    name: caddy
+    state: reloaded
+  when: not is_codespace
+  tags:
+    - caddy
+
+- name: reload_caddy_codespace
+  ansible.builtin.command: "caddy reload --config /etc/caddy/Caddyfile"
+  changed_when: false
+  when: is_codespace
+  tags:
+    - caddy
+
+- name: restart_auditd_vm
+  ansible.builtin.systemd:
+    name: auditd
+    state: restarted
+  when: not is_codespace
+  tags:
+    - auditd
+
+- name: restart_auditd_codespace
+  ansible.builtin.command: "service auditd restart"
+  changed_when: false
+  when: is_codespace
+  tags:
+    - auditd

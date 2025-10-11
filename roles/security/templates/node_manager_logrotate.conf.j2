@@ -1,0 +1,8 @@
+{{ node_manager.log_path }}/**/*.log {
+    weekly
+    size 10M
+    rotate 4
+    compress
+    missingok
+    notifempty
+}

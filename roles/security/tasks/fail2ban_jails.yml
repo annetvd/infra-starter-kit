@@ -13,7 +13,7 @@
       findtime  = {{ jail.findtime | default(3600) }}
       action    = {{ jail.action | default('%(action_mwl)s') }}
       destemail = {{ jail.destemail | default(security_email) }}
-      sender    = {{ jail.sender | default('noreply@' ~ postfix_domain) }}
+      sender    = {{ jail.sender | default('noreply@' ~ system_mailname) }}
       ignoreip  = {{ jail.ignoreip | default('127.0.0.1 ::1 ' ~ foreign_node_api_ip) }}      
       {% if jail.port is defined %}port = {{ jail.port }}{% endif %}
 
@@ -51,23 +51,6 @@
   tags:
     - verification
 
-- name: Create Maildir directories for local testing (Codespace)
-  ansible.builtin.file:
-    path: "/home/codespace/Maildir/{{ item }}"
-    state: directory
-    owner: codespace
-    group: codespace
-    mode: '0755'
-  loop:
-    - cur
-    - new
-    - tmp
-  loop_control:
-    label: "/home/codespace/Maildir/{{ item }}"
-  when: is_codespace
-  tags:
-    - verification
-
 # Using a test IP for this trial; unbanning the IP is not required
 - name: Trigger test email for sshd jail
   ansible.builtin.shell: fail2ban-client set sshd banip 192.0.2.0/24
@@ -76,11 +59,4 @@
   tags:
     - verification
     - test
-
-- name: Check if mail was delivered locally (Codespace)
-  ansible.builtin.shell: 'grep -q -F "Subject: [Fail2Ban]" /home/codespace/Maildir/new/*'
-  register: mail_check
-  changed_when: false
-  when: is_codespace
-  tags:
-    - verification
+    - mail_test

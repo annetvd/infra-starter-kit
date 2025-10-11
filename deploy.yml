@@ -1,0 +1,84 @@
+---
+- name: Deploy service files to remote host
+  hosts: all
+  become: true
+  vars:
+    apache_source: "deploy/apache_service"
+    node_source: "deploy/node_service"
+
+  tasks:
+    - name: Deploy service files to target host
+      block:
+        - name: Create Apache service directories on remote
+          ansible.builtin.file:
+            path: "{{ apache_service.path }}/{{ item.path }}"
+            state: directory
+            owner: root
+            group: root
+            mode: '0750'
+          loop: "{{ lookup('ansible.builtin.filetree', apache_source, wantlist=True) }}"
+          loop_control:
+            label: "{{ item.path }}"
+          when: item.state == "directory"
+          tags:
+            - apache
+
+        - name: Copy Apache files to remote host
+          ansible.builtin.copy:
+            src: "{{ item.src }}"
+            dest: "{{ apache_service.path }}/{{ item.path }}"
+            owner: root
+            group: root
+            mode: '0640'
+          loop: "{{ lookup('ansible.builtin.filetree', apache_source, wantlist=True) }}"
+          loop_control:
+            label: "{{ item.path }}"
+          when: item.state == "file"
+          tags:
+            - apache
+
+        - name: Create Node.js service directories on remote
+          ansible.builtin.file:
+            path: "{{ portfolio_service.path }}/{{ item.path }}"
+            state: directory
+            owner: root
+            group: root
+            mode: '0750'
+          loop: "{{ lookup('ansible.builtin.filetree', node_source, wantlist=True) }}"
+          loop_control:
+            label: "{{ item.path }}"
+          when: item.state == "directory"
+          tags:
+            - node_api
+
+        - name: Copy Node.js service files to remote host
+          ansible.builtin.copy:
+            src: "{{ item.src }}"
+            dest: "{{ portfolio_service.path }}/{{ item.path }}"
+            owner: root
+            group: root
+            mode: '0640'
+          loop: "{{ lookup('ansible.builtin.filetree', node_source, wantlist=True) }}"
+          loop_control:
+            label: "{{ item.path }}"
+          when: item.state == "file"
+          tags:
+            - node_api
+        
+      tags:
+        - deploy_services
+
+    - name: Install Node.js API dependencies
+      ansible.builtin.shell: |
+        export NVM_DIR="{{ portfolio_service.path }}/.nvm"
+        source "$NVM_DIR/nvm.sh"
+        nvm use default
+        npm ci --omit=dev
+      args:
+        executable: /bin/bash
+        chdir: "{{ portfolio_service.path }}"
+        creates: "{{ portfolio_service.path }}/node_modules"
+      environment:
+        NODE_ENV: "{{ portfolio_service.app_env }}"
+      tags:
+        - node_api
