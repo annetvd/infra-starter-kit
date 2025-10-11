@@ -1,0 +1,73 @@
+<VirtualHost *:{{ apache_service.port }}>
+    ServerName {{ web_domain }}
+    ServerAlias www.{{ web_domain }}
+    DocumentRoot {{ apache_service.path }}/public_html
+
+    <Directory {{ apache_service.path }}/public_html>
+        AllowOverride FileInfo
+        Require all granted
+
+        <LimitExcept GET POST>
+          Require all denied
+        </LimitExcept>
+    </Directory>
+
+    <Directory {{ apache_service.path }}/public_html/vendor>
+        Require all denied
+    </Directory>
+
+    <Directory {{ apache_service.path }}/public_html/core>
+        Require all denied
+    </Directory>
+
+    <Files {{ apache_service.path }}/public_html/core/server.php>
+        Require all granted
+    </Files>
+
+    ErrorLog ${APACHE_LOG_DIR}/{{ web_domain }}-error.log
+    CustomLog ${APACHE_LOG_DIR}/{{ web_domain }}-access.log combined
+</VirtualHost>
+
+<VirtualHost *:{{ apache_service.port }}>
+    ServerName awococado.{{ web_domain }}
+    ServerAlias www.awococado.{{ web_domain }}
+    DocumentRoot {{ apache_service.path }}/public_html/awococado
+
+    <Directory {{ apache_service.path }}/public_html/awococado>
+        AllowOverride FileInfo
+        Require all granted
+
+        <LimitExcept GET POST>
+          Require all denied
+        </LimitExcept>
+    </Directory>
+
+    {% for item in apache_writable_rel_paths -%}
+    <Directory {{ apache_service.path }}/{{ item.path }}>
+        AllowOverride None
+        {% if item.require_all_denied is defined and item.require_all_denied -%}
+        Require all denied
+        {% else -%}
+        Require all granted
+        <IfModule mod_php.c>
+            php_admin_flag engine off
+        </IfModule>
+        {%- endif +%}
+    </Directory>
+    
+    {% endfor -%}
+
+    <FilesMatch "\.(xml)$">
+        Require all granted
+    </FilesMatch>
+
+    <IfModule security2_module>
+        <LocationMatch "^/Certificados/">
+            SecRuleRemoveById 941130
+            SecRuleRemoveById 941170
+        </LocationMatch>
+    </IfModule>
+
+    ErrorLog ${APACHE_LOG_DIR}/awococado-error.log
+    CustomLog ${APACHE_LOG_DIR}/awococado-access.log combined
+</VirtualHost>

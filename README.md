@@ -1,11 +1,10 @@
 # 🧰 Infra Starter Kit: Production Web Services and Server Security Setup with Ansible
-
-![Short demonstration video showing the playbook running and executing each task.](docs/media/overview-playbook-demo.gif)
-
 This repository contains a **developing Ansible project** aimed at configuring a remote host as part of migrating my web portfolio to an **Oracle Cloud** instance running **Ubuntu 22.04**.  
 The playbook is designed to run reproducibly in **GitHub Codespaces** and automates the installation and configuration of essential services such as **MySQL**, **Apache**, and **Node.js**, along with a set of security measures.
 
 The primary feature of this project is that the resulting host configuration is designed to operate **without opening inbound ports, without a public IP, and without exposing the network**. Service exposure is handled exclusively through a **Cloudflare Tunnel**, using **Caddy** as a reverse proxy.
+
+![Network architecture diagram of the Infra Starter Kit, showing connections and protocols between Cloudflare, Cloudflare Tunnel, Caddy proxy, Apache, Node.js, and MySQL running on a self-hosted architecture](docs/media/network-architecture-diagram.png)
 
 This configuration is intentionally limited to a single server, as it is designed to meet the needs of this specific project while keeping the code modular and easy to adapt if requirements change.
 
@@ -18,11 +17,11 @@ This project was born from the need to configure my instance from scratch, witho
 
 My goal is not only to configure my own infrastructure but also to provide an approachable reference based on what I’ve learned, so other developers can explore and experiment without worrying about breaking a production server.
 
-The project is custom-designed for my web portfolio (publicly available on my GitHub), and many of the security decisions are based on the real needs of that portfolio.<br><br>
+The project is custom-designed for my web portfolio (publicly available on [my GitHub](https://github.com/annetvd/annetvargas-web-portfolio)), and many of the security decisions are based on the real needs of that portfolio.<br><br>
 
 ### Features implemented up to the latest commit:
 - SSH and system users  
-- Postfix  
+- Exim4
 - UFW  
 - Fail2ban  
 - Auditd  
@@ -30,18 +29,22 @@ The project is custom-designed for my web portfolio (publicly available on my Gi
 - MySQL  
 - Apache  
 - PHP  
-- Node.js API (pending `.service` file for systemd)  
-- Caddy (initial configuration, pending inclusion of `Caddyfile`)  
+- Node.js API 
+- Caddy 
 - Cloudflare Tunnel  
 - Unattended-upgrades  
 - Logrotate<br><br>
 
 ### Next steps:
-- Publish portfolio application files to Apache and Node.js services.
-- Configure the Apache VirtualHost.
-- Include the `.service` file to start the Node.js API.
-- Add reverse proxy configuration in the `Caddyfile`.
-- Complete auditd rules for sensitive files after deployment.<br><br>
+The next phase of this project is to **test the current configuration on an Oracle Cloud instance** as part of the migration of my portfolio. All roles and tasks have already been validated in GitHub Codespaces, where the playbooks successfully configured, deployed, and orchestrated the core services responsible for security and basic functionality, including Cloudflare Tunnel (Cloudflared), Caddy, Apache, MySQL, and Node.js, all working together seamlessly under my portfolio domain [annetvargas.top](https://annetvargas.top).<br><br>
+
+### Operational Overview
+A demonstration video is available to illustrate how the configured services interact once the playbooks have been applied. The recording was made directly in **GitHub Codespaces** and shows the environment starting from a clean state: the log files for **Caddy** and **Apache** are initially empty, the **Node.js API** logs are visible from the terminal, and the **Cloudflare Tunnel** logs are displayed in the Cloudflare dashboard.
+
+After making several requests from the browser, the video shows how the logs from Caddy, Apache, and the Node.js API align with those from Cloudflare, confirming correct routing and proxy synchronization through the tunnel.
+
+🎥 Watch the demonstration: [View on Google Drive](https://drive.google.com/file/d/1JT6EXyasIJqCh6bwP-R3HbV7fV_p8EEA/view?usp=sharing)<br><br>
+
 
 > **Warning:** Production security requires responsibility. If you choose to take inspiration from or use this configuration, do so at your own risk and make sure you understand the implications of each setting.
 
@@ -51,7 +54,7 @@ The project is custom-designed for my web portfolio (publicly available on my Gi
 To get started, create a Codespace directly from this repository by clicking `Code`, selecting the `Codespaces` tab, and choosing `Create codespace on main`. This will open a **blank Codespace** with **Ubuntu 22.04**. No additional setup is required. This project was developed and tested on Ubuntu 22.04, which is the recommended environment.
 
 This project aims to be accessible for review and learning:
-- All variables used by the playbook are public and initialized with dummy values.
+- All variables used by the playbooks are public and initialized with dummy values.
 - For sensitive data that must be valid (e.g., Cloudflare Tunnel token), **HashiCorp Vault** is used to securely inject values at runtime.<br><br>
 
 ### 1. Prepare the Environment
@@ -133,38 +136,75 @@ In a separate terminal tab, export the environment variables using the specified
 
 ```bash
 export VAULT_ADDR="http://127.0.0.1:8200"
-export VAULT_TOKEN="XXXXXXXXXXXXXXXXXXXX"
+export VAULT_TOKEN="xxx.xxxxxxxxxxxxxxxxx"
 ```
 
 Initialize required secrets:
 
 ```bash
-vault kv put secret/cloudflare tunnel_token="my_demo_token"
-vault kv put secret/ssh system_user_public_key="ssh-rsa AAAAB3Nza..."
+vault kv put secret/ssh system_user_public_key="ssh-rsa xxxxxxxxxxxxx..."
+vault kv put secret/exim4 email_app_password="xxxx xxxx xxxx xxxx"
+vault kv put secret/cloudflare tunnel_token="my_token"
 ```
 
 <br>
 
-### 5. Run the Playbook
-Run the playbook using the local inventory:
+### 5. Run the Security Playbook
+Run the security playbook using the local inventory to configure system security, install required packages, set up users, and initialize core services:
 
 ```bash
-ansible-playbook -i inventory/local.ini playbook.yml
+ansible-playbook -i inventory/local.ini security.yml
+```
+
+This step prepares the system for web service deployment and runtime configuration. For more details about the `security` role, see [Design Decisions & Implementation Notes](#-design-decisions--implementation-notes).
+
+<br>
+
+> **Note:** In Codespaces, the Cloudflare Tunnel may stop a few minutes after running the `security.yml` playbook. The tunnel is initially created correctly and its connection can be verified in the Cloudflare dashboard. After completing the full setup with `deploy.yml` and `runtime_setup.yml`, the tunnel may stop; in such cases, it should be restarted manually from the terminal using the same command (`sudo tunnel run --token cloudflare_tunnel_token`), and it will remain active for testing purposes. The associated task is intended solely for Codespaces testing and will not be investigated further at this time. Any issues discovered in production that indicate a problem with the playbook will be fixed and documented accordingly.
+
+<br>
+
+### 6. Deploy Web Services
+You can deploy the **Apache** and **Node.js** web services using your preferred method. For convenience, a provisional `deploy.yml` playbook is provided.
+
+Steps to implement the playbook:
+- Create a folder named `deploy` in the repository containing `apache_service` and `node_service` subfolders, at the same level as `roles` and `group_vars`.
+- Place your service files inside the corresponding subfolders.
+- Run the playbook:
+
+```bash
+ansible-playbook -i inventory/local.ini deploy.yml
+```
+
+This playbook copies the content of the `apache_service` and `node_service` folders to the appropriate directories and installs Node.js dependencies.
+
+<br>
+
+> **Note:** In this step, you only need to deploy the applications. Directory permissions, service initialization, and other critical configurations will be handled in the next playbook.
+
+<br>
+
+### 7. Run the Runtime Setup Playbook
+
+After deploying the applications, run the runtime setup playbook to finalize the configuration and orchestrate services:
+
+```bash
+ansible-playbook -i inventory/local.ini runtime_setup.yml
 ```
 
 <br>
 
-### 6. Controlling Output with Tags
-This playbook is filled with tags to make testing and reusing specific components easier. The following tags allow you to skip the personalized success messages:
+### 8. Controlling Output with Tags
+These playbooks are filled with tags to make testing and reusing specific components easier. The following tags allow you to skip the personalized success messages:
 - success → All success messages.
 - success:done → Messages marking module completion.
 - success:stage → Messages marking block-level completion.
 
-Example: run the playbook without success messages:
+Example: run the security playbook without success messages:
 
 ```bash
-ansible-playbook -i inventory/local.ini playbook.yml --skip-tags success
-ansible-playbook -i inventory/local.ini playbook.yml --skip-tags success:stage
+ansible-playbook -i inventory/local.ini security.yml --skip-tags success
+ansible-playbook -i inventory/local.ini security.yml --skip-tags success:stage
 ```
 
 <br>
@@ -172,7 +212,7 @@ ansible-playbook -i inventory/local.ini playbook.yml --skip-tags success:stage
 Example: skip package installation for faster runs (useful when re-running after initial setup):
 
 ```bash
-ansible-playbook -i inventory/local.ini playbook.yml --skip-tags install,success:stage
+ansible-playbook -i inventory/local.ini security.yml --skip-tags install,success:stage
 ```
 
 > **Note:** Even though Ansible is idempotent (it won’t reinstall packages that are already present), package installation tasks still take time to run because Ansible needs to check the current state of each package. Skipping them on subsequent runs can significantly reduce execution time.
@@ -182,12 +222,12 @@ ansible-playbook -i inventory/local.ini playbook.yml --skip-tags install,success
 When targeting specific tasks, include the **always** tag to ensure environment detection runs:
 
 ```bash
-ansible-playbook -i inventory/local.ini playbook.yml --tags always,ufw --skip-tags install,success
+ansible-playbook -i inventory/local.ini security.yml --tags always,ufw --skip-tags install,success
 ```
 
 <br>
 
-You may also notice a special **includes** tag in this playbook. This tag exists to ensure that when you target a lower-level tag like `install`, Ansible actually evaluates the imported tasks and decides which ones to run or skip.
+You may also notice a special **includes** tag in these playbooks. This tag exists to ensure that when you target a lower-level tag like `install`, Ansible actually evaluates the imported tasks and decides which ones to run or skip.
 
 For example, `ufw` is a high-level tag, it is defined on the include itself, so when you run `--tags ufw`, Ansible will automatically pull in all tasks related to UFW. However, keep in mind that even a high-level tag like `ufw` might be used as a "low-level" tag inside other `include_tasks` (for example, within a `mysql` or `logrotate` module).
 
@@ -196,12 +236,12 @@ Because of this, if you only target a low-level tag like `install` and do not sp
 That’s why, whenever you are running a subset of tasks with `--tags`, it’s a good practice to also include the special `includes` tag. This ensures Ansible first loads all relevant task files, so it can decide which ones to execute or skip based on your selected tags:
 
 ```bash
-ansible-playbook -i inventory/local.ini playbook.yml --tags always,includes,install
+ansible-playbook -i inventory/local.ini security.yml --tags always,includes,install
 ```
 
 <br>
 
-> **Warning:** Many services are interconnected (e.g., Postfix + Fail2ban, Apache + PHP, global Logrotate), running only specific tags (e.g., fail2ban) without having the dependent services installed or configured may lead to errors (e.g., missing log paths). It is recommended to run the **entire playbook at least once** on a fresh Codespace, then re-run as needed.
+> **Warning:** Many services are interconnected (e.g., Exim4 + Fail2ban, Apache + PHP, global Logrotate), running only specific tags (e.g., fail2ban) without having the dependent services installed or configured may lead to errors (e.g., missing log paths). It is recommended to run the **entire playbook at least once** on a fresh Codespace, then re-run as needed.
 
 <br>
 
@@ -218,22 +258,41 @@ ansible-playbook -i inventory/local.ini playbook.yml --tags always,includes,inst
 - ⚠️ Some tasks depend on services being present (e.g., logrotate configs), so partial runs may fail if prerequisites are missing.<br><br>
 
 ## 📐 Design Decisions & Implementation Notes
+This project is organized around two main roles and three playbooks, each serving a specific purpose.
+
+The **roles** are tightly coupled and depend on each other, either to complete their configuration or to ensure that the underlying environment matches the expected settings.
+
+- `security`: This role serves as the foundation of the entire setup. It handles system hardening, package installation, and service configuration, among other tasks.<br>
+It prepares the environment for both web service deployment and runtime execution. It manages SSH and system users, Exim4, AppArmor, UFW, Fail2ban, Apache, PHP, MySQL, Node.js API, Caddy, Cloudflare Tunnel, Logrotate, and Unattended-Upgrades.
+- `runtime_setup`: This role is executed after the web services have been deployed. It finalizes the configuration and orchestration of the web stack, including Apache, Node.js, and Caddy, and implements the Audit rules.<br>
+Specifically, it copies the Caddyfile to the remote host, configures Apache virtual hosts, ensures correct permissions for Apache and Node.js API files, registers the Node.js API as a systemd service, and installs Auditd rules.<br>
+Auditd configuration is handled here (rather than in the security role) because the `robertdebock.auditd` role replaces existing rules with those in the `auditd_rules` variable on each run. For this reason, it is applied only after the deployment phase, once all paths to be audited are properly configured.
+
+Shared variables used across both roles are defined in [`group_vars/all.yml`](group_vars/all.yml)
+, ensuring uniform configuration and behavior throughout the entire system.<br><br>
+
+**Playbooks**
+- `security.yml`: Executes the security role to set up system hardening, core services, and environment preparation.
+- `deploy.yml`: A quick-start playbook for Codespaces that provides a ready-to-run deployment of Apache and Node.js web services. It is intended as a convenience tool, while allowing users to choose their preferred deployment approach, such as cloning from a Git repository or manually copying files.<br>
+It simply copies the contents of the `deploy/apache_service` and `deploy/node_service` subfolders to the corresponding directories on the remote host and installs Node.js dependencies (see [Quick Start: Codespaces](#6-deploy-web-services) for implementation details).
+- `runtime_setup.yml`: Loads the runtime_setup role. It runs after deployment to complete the configuration and startup of all web-related services.<br><br>
+
+### Internal Documentation & Configuration Mapping
 Throughout this project, I’ve added detailed comments beginning with `Note:`, these are meant to highlight sensitive or important configurations that deserve extra attention.
 
 When working in GitHub Codespaces, you can easily search for `Note:` using Visual Studio Code’s search tool to navigate through all of them.
 
 I encourage anyone reviewing or modifying this playbook to read those notes carefully before making changes, as they often explain why a task was written in a particular way and how to avoid misconfigurations.
 
-Almost every configuration in this project has been centralized into variables, located mainly in:
+Almost every configuration in this project has been centralized into variables defined in:
 - [`group_vars/all.yml`](group_vars/all.yml)
-- [`defaults/main.yml`](roles/security/defaults/main.yml)
-- [`vars/main.yml`](roles/security/vars/main.yml)
+- Each role’s `defaults/main.yml`
+- Each role’s `vars/main.yml`
 
 This means there are no “hidden” hardcoded values in the tasks. If you review the variable files and the `Note:` comments, you can be confident that the playbook will not introduce unexpected configurations.<br><br>
 
 ### Use of `merge_vars`
-
-This playbook explicitly uses the **`merge_vars`** variable, which is disabled by default in [`defaults/main.yml`](roles/security/defaults/main.yml). This was a deliberate choice to keep configurations consistent when dealing with multiple services at once.
+The security playbook explicitly uses the **`merge_vars`** variable, which is disabled by default in [`defaults/main.yml`](roles/security/defaults/main.yml). This was a deliberate choice to keep configurations consistent when dealing with multiple services at once.
 
 The logic works as follows:
 - `merge_vars: true` must be set to enable variable merging.
@@ -296,14 +355,14 @@ fail2ban_jails:
 <br>
 
 ### Node.js API External Access
-The **Node.js API** was initially intended to connect from an external server to MySQL on the server currently being configured, which is why some remnants of this design remain in the playbook (e.g., the `foreign_node_api_ip` variable).
+A foreign **Node.js API** was originally intended to connect to MySQL from an external server, which is why some traces of that design remain in the security playbook (e.g., the `foreign_node_api_ip` variable).
 
-When I started the project, I had not yet encountered **Cloudflare Tunnels**, but I now view them as essential for securely exposing any services externally, even though the playbook is designed to configure each security point restrictively.
+When I started the project, I had not yet encountered **Cloudflare Tunnels**, but I now view them as essential for securely exposing any services externally, even though the playbooks are designed to configure each security point restrictively.
 
 In the current commit, MySQL does **not** allow any external connections for security reasons. Any access to MySQL or other services from outside the host should go through the **Cloudflare Tunnel** with **Caddy** as the reverse proxy.<br><br>
 
 ### Database Import Logic
-Database import in [`tasks/mysql_import_db.yml`](roles/security/tasks/mysql_import_db.yml) is controlled via the `mysql_databases` variable, which includes the following attributes:
+Database import in [`security/tasks/mysql_import_db.yml`](roles/security/tasks/mysql_import_db.yml) is controlled via the `mysql_databases` variable, which includes the following attributes:
 - `name`: the database name.
 - `init_id`: identifier used to track if the database dump has already been imported.
 - `dump_file_path`: path to the SQL dump file on the local machine (where the playbook is executed), not on the host being configured.
@@ -313,12 +372,30 @@ The `.imported` flag file is stored in `/var/lib/infra-starter-kit/security/mysq
 
 **The target database must exist** (even if empty). The tasks that create it are defined in [`tasks/mysql_db_and_users.yml`](roles/security/tasks/mysql_db_and_users.yml).
 
-If only the `name` attribute is provided in `mysql_databases` without using MySQL-specific tags, the playbook will create the database without errors and continue execution. Providing additional attributes will also trigger the import of the dump.
+If only the `name` attribute is provided in `mysql_databases` without using MySQL-specific tags, the security playbook will create the database without errors and continue execution. Providing additional attributes will also trigger the import of the dump.
 
 In `mysql_users`, the `host` property defaults to `localhost` if not specified.<br><br>
 
 > **Note:** The database dumps included in this repository are fully **functional** and can be imported, but they contain only **fictitious data** and placeholder relationships.<br>
 > They were generated with AI and inspired by the schemas used in my portfolio and demo. Their purpose is purely illustrative and intended for testing scenarios, not for production use.
+
+<br>
+
+### MySQL Post-Setup Connection
+By default, MySQL restricts access to the local UNIX socket (`localhost`) on many Linux distributions, including Ubuntu, allowing only users with the required permissions to connect through it. To maintain consistent and controlled communication between services, the architecture presented in this project deliberately enforces TCP-based local connections over `127.0.0.1` instead of relying on the UNIX socket. In other words, connections that would normally use `localhost` should instead use `127.0.0.1`.
+
+This behavior only affects how connections are made, not how users are defined in MySQL. As shown in this repository, users are still created with the host `localhost` (e.g., `user@localhost`), which remains valid and fully functional with connections through `127.0.0.1`.
+
+Example of a Node.js API connection for a MySQL user with host set to localhost using TCP (127.0.0.1):
+
+```js
+const connection = await mysql.createConnection({
+  host: "127.0.0.1",
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME
+});
+```
 
 <br>
 
@@ -335,12 +412,102 @@ The screenshots below show the information Cloudflare receives from the Codespac
 
 ![Codespace tunnel listed as healthy in Cloudflare dashboard](docs/media/codespace-tunnel-status.png)<br><br>
 
-> **Note:** This configuration allows external access to services in a controlled and secure manner through the tunnel. Direct external connections to the host are not allowed, and all service traffic should flow through the Cloudflare Tunnel using **Caddy** as the reverse proxy.
+> **Note:** As mentioned previously, all external access to services in this project is routed securely through the Cloudflare Tunnel. Direct connections to the host are not allowed, and all traffic to services like Node.js or Apache must pass through the tunnel with Caddy acting as the reverse proxy, ensuring a consistent and secure configuration.
 
 <br>
 
+### Cloudflare Domain Settings for Tunnel Traffic
+To route traffic securely for this project between the domain, Cloudflare, Caddy, and the web services, **Cloudflare** must be configured to **manage DNS** and **enforce HTTPS redirection** to ensure that traffic remains secure and that both Caddy and the web services operate behind a consistent and protected layer.
+
+For the **Cloudflare Tunnel** to route traffic from the domain, **Cloudflare must manage the DNS records**. If the domain is registered directly through Cloudflare, no additional configuration is required, since DNS management is enabled by default. However, if the domain was purchased from another provider, the nameservers must be updated to the values provided by Cloudflare so it can handle DNS resolution and security policies for all incoming traffic. This setup is illustrated in the image below:
+
+![Cloudflare nameserver update instructions](docs/media/cloudflare-nameserver-update-instructions.png)
+
+After updating the nameservers, Cloudflare provides the option to block automated traffic from AI training bots. Enabling the **Block on all pages** option in *Block AI training bots* adds an extra layer of protection specific to the domain without affecting normal user traffic.
+
+HTTPS enforcement should be activated in the Cloudflare dashboard for the specific domain under **Overview → Quick start guide → Get more out of your Free plan → Security**, by enabling **Always Use HTTPS**. This ensures that all incoming traffic to the domain is redirected to HTTPS, which is important not only for security but also because the Caddy reverse proxy and web services rely on HTTPS being consistently enforced at the network edge. The screenshot below illustrates this configuration for the domain.
+
+![Cloudflare panel with the Always Use HTTPS option activated](docs/media/cloudflare-https-redirection-settings.png)
+
+These steps provide the essential security foundation for a coordinated setup between the Cloudflare Tunnel, Caddy reverse proxy, and web services. However, Cloudflare includes many powerful security tools and policies worth exploring to enhance protection even further.<br><br>
+
+### Tunnel Routing, Reverse Proxy, and HTTP Header Configuration
+In this project, traffic flows through two proxy layers before reaching the internal web services:
+
+1. **Cloudflare**: Intercepts requests to the domain and routes them through the Cloudflare Tunnel, which securely delivers each request to Caddy without requiring any incoming ports to be exposed.
+2. **Caddy**: Acts as a reverse proxy, forwarding requests to the appropriate internal web services.
+
+Both layers append additional information to the original HTTP headers. If these headers are not correctly forwarded, the internal services will record the connection details from the local tunnel endpoint (127.0.0.1) instead of the real client’s information, such as their IP address, the original protocol (HTTPS), and other details.
+
+#### Tunnel Route Configuration
+To configure the Cloudflare Tunnel routes, it is necessary to navigate in the **Zero Trust** dashboard, under **Tunnels → [Your Tunnel] → Published Application Routes**, and create new routes by selecting **Add a Published Application Route**. Each route is divided into two main sections, Hostname and Service, which specify how incoming requests are captured and where they are directed.
+
+The **Hostname** section defines how incoming requests are matched to a specific route, which can be configured through the following fields:
+- **Subdomain**: Determines the subdomain portion of the route’s hostname (optional).
+- **Domain**: Defines the primary domain associated with the route.
+- **Path**: Restricts the route to a specific path within the domain (optional).
+
+The **Service** section defines the internal service that the route points to, and can be configured through the following fields:
+- **Type**: Sets the protocol or application type (for example, HTTP, SSH, or RDP).
+- **URL**: Specifies the address of the service associated with the route.
+
+Once a route is registered, Cloudflare automatically updates the DNS records for that route without requiring any additional configuration.
+
+The following image shows an example of adding a published application route in the Cloudflare Zero Trust dashboard:
+
+![Screenshot of a Cloudflare Tunnel route in the Published Application Routes form](docs/media/cloudflare-tunnel-add-route.png)
+
+In this project, all internal routes are configured to use the HTTP scheme and point to `http://localhost`, so that, all traffic reaching the Cloudflare Tunnel is directed to Caddy, as illustrated in the following image:
+
+![Overview of all published application routes in Cloudflare Zero Trust, with each route pointing to http://localhost](docs/media/cloudflare-tunnel-routes-overview.png)
+
+Using HTTP here simplifies configuration while maintaining security. Although Caddy listens on both HTTP and HTTPS by default, enabling HTTPS would require additional certificate management, which is unnecessary in this setup since all public ports are closed and traffic flows securely through the Cloudflare Tunnel.<br><br>
+
+#### Caddy Reverse Proxy Configuration
+Because the Cloudflare Tunnel has been configured to reach Caddy via HTTP, Caddy must be explicitly instructed to handle the requests using the HTTP scheme. If the domain name is specified as `example.com {`, Caddy will assume the connection should use HTTPS by default. To ensure Caddy correctly intercepts the requests, the full [site block](roles/runtime_setup/templates/caddyfile.j2) must include the HTTP scheme: `http://example.com {`.
+
+Once traffic reaches Caddy, it must forward the original client headers so that the specified service knows where to find the real client information within a proxied connection. The snippet below provides an example of a `reverse_proxy` configuration in the [Caddyfile](roles/runtime_setup/templates/caddyfile.j2) that demonstrates how to do this:
+
+```caddy
+reverse_proxy 127.0.0.1:8080 {
+    header_up X-Forwarded-For {header.CF-Connecting-IP}
+    header_up X-Real-IP {header.CF-Connecting-IP}
+    header_up X-Forwarded-Proto {http.request.header.CF-Visitor.scheme}
+    header_up X-Forwarded-Host {http.request.host}
+}
+```
+
+<br>
+
+#### Node.js Service Configuration
+Since Caddy forwards specific proxy headers (such as X-Forwarded-For, X-Real-IP, and X-Forwarded-Proto) to indicate where the original client information can be found, the receiving Node.js application must be explicitly configured to trust them. This is necessary because most server software ignores these headers by default to prevent spoofing. However, in this setup, all traffic passes through the Cloudflare Tunnel, and the headers are populated with the client information provided by Cloudflare (e.g., `CF-Connecting-IP` and `CF-Visitor.scheme`). As a result, the proxy is trusted, making it safe for the application to rely on these headers.
+
+In Express, the application can be configured to trust the proxy with the following line of code:
+
+```js
+app.set("trust proxy", true);
+```
+
+With this setting, properties such as `req.ip`, `req.protocol`, and `req.secure` will reflect the original client’s connection rather than the Cloudflare Tunnel’s, allowing the application to accurately process client data.<br><br>
+
+#### Apache Configuration
+As with the Node.js service, Apache must also be configured to trust the proxy. This is done by enabling the `remoteip` module and applying the following configuration, included in [`roles/security/tasks/apache_hardening.yml`](roles/security/tasks/apache_hardening.yml):
+
+```apache
+# Use the X-Forwarded-For header to obtain the original client IP for requests coming from 127.0.0.1.
+RemoteIPHeader X-Forwarded-For
+RemoteIPInternalProxy 127.0.0.1
+
+# Mark the connection as HTTPS when requests arrive from 127.0.0.1 and the original scheme was HTTPS.
+SetEnvIfExpr "%{REMOTE_ADDR} == '127.0.0.1' && req('X-Forwarded-Proto') == 'https'" HTTPS=on
+```
+
+This configuration ensures that Apache:
+- Reads the real client IP from the forwarded headers.
+- Recognizes the connection as HTTPS if Cloudflare originally received the request via HTTPS.<br><br>
+
 ### Detecting Codespaces Environment
-The `playbook.yml` includes a task to detect if the playbook is being **executed from a GitHub Codespace**:
+The `security.yml` and `runtime_setup.yml` playbooks include a task to detect if the playbook is being **executed from a GitHub Codespace**:
 
 ```yaml
 - name: Detect if running inside GitHub Codespaces
@@ -362,7 +529,7 @@ For example:
 - Other services that normally rely on **systemd** are started with `service service_name start` to approximate production behavior. 
 - Features that cannot be safely simulated in the container, such as **AppArmor** or the global **logrotate** test, are skipped to maintain automation and avoid breaking the playbook.
 
-This approach allows the playbook to be run and tested in Codespaces while closely simulating a real production host configuration.<br><br>
+This approach allow the playbooks to be run and tested in Codespaces while closely simulating a real production host configuration.<br><br>
 
 ## 🛠️ Tips & Troubleshooting
 ### Logrotate Configuration Files
@@ -378,13 +545,13 @@ To identify and clean these hidden characters:
 
 **1. Display hidden characters using:**
 ```bash
-sudo cat -A /workspaces/infra-starter-kit/roles/security/files/logrotate_conf_file.conf
+sudo cat -A ./roles/security/files/logrotate_conf_file.conf
 ```
 Line endings should appear as `$` at the end of each line.<br><br>
 
 **2. Remove problematic carriage returns using:**
 ```bash
-sudo sed -i 's/\r$//' /workspaces/infra-starter-kit/roles/security/files/logrotate_conf_file.conf
+sudo sed -i 's/\r$//' ./roles/security/files/logrotate_conf_file.conf
 ```
 
 <br>
@@ -405,7 +572,7 @@ sudo rm /var/run/fail2ban/fail2ban.sock
 After this, starting Fail2ban should work normally.<br><br>
 
 ### Expected Auditd Load Rules Handler Failure (Codespaces)
-When running the playbook in Codespaces, the `Load rules` handler from the `robertdebock.auditd` role will always fail with a `non-zero return code`.
+When running the `runtime_setup.yml` playbook in Codespaces, the `Load rules` handler from the `robertdebock.auditd` role will always fail with a `non-zero return code`:
 
 ![Auditd Load Rules error in Codespaces](docs/media/codespace-auditd-load-rules-error.png)
 

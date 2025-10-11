@@ -1,0 +1,42 @@
+---
+# ====================================================
+# Apache (configurable)
+# ====================================================
+# Note: By default, Apache directories in this project have 0750 permissions, with root as the owner
+# and the Apache user group as the group owner. The variable apache_writable_rel_paths defines
+# exceptions where 0770 permissions are required, for example, when Apache needs to upload files
+# or create dump files.
+# Each entry includes a path and a flag called require_all_denied, which determines how the directory
+# is handled in the virtual host template (apache_vhosts.conf.j2):
+#   - If true, access is restricted with "Require all denied".
+#   - If false, access is allowed with "Require all granted" and PHP execution is disabled using
+#     "php_admin_flag engine off".
+# The require_all_denied flag applies only to the specific virtual host example in this project.
+# It is optional, defaults to false, and does not affect the playbook itself; it can be safely omitted
+# if not relevant to the configuration.
+
+apache_writable_rel_paths:
+  - path: public_html/awococado/Invoices/PDF
+    require_all_denied: true
+  - path: public_html/awococado/Invoices/XML
+    require_all_denied: true
+  - path: public_html/awococado/Payments/PDF
+    require_all_denied: true
+  - path: public_html/awococado/Payments/XML
+    require_all_denied: true
+  - path: public_html/awococado/SQLDumps
+    require_all_denied: true
+  - path: public_html/awococado/Uploads/Images
+
+# ====================================================
+# Caddy (configurable)
+# ====================================================
+css_cdn_sources:
+  - https://cdn.jsdelivr.net
+  - https://fonts.googleapis.com
+  - https://fonts.gstatic.com
+
+# ====================================================
+# Auditd (configurable)
+# ====================================================
+custom_audit_rules: []

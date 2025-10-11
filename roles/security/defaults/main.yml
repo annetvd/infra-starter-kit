@@ -18,11 +18,14 @@ foreign_node_api_ip: 127.0.0.1/8
 security_email: codespace@localhost
 
 # ====================================================
-# Postfix (configurable)
+# Exim4 (configurable)
 # ====================================================
-postfix_mailname: localhost.localdomain
-# "localhost.localdomain" is a valid and functional default domain for systems without a configured real domain.
-postfix_domain: localhost.localdomain
+email_user: noreply@example.com   # External SMTP account username for outgoing mail
+email_app_password: ""            # App password or SMTP password
+system_mailname: example.com      # Local mail name (system hostname/domain)
+smtp_host: smtp.example.com       # SMTP relay host
+smtp_port: 587                    # SMTP relay port
+mail_from_domain: example.com     # Domain to display in outgoing email headers (e.g., gmail.com)
 
 # ====================================================
 # MySQL (configurable)

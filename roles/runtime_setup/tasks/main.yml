@@ -1,0 +1,91 @@
+---
+# Apache
+- name: Set up Apache module
+  ansible.builtin.include_tasks: apache.yml
+  tags: [apache, includes]
+
+- name: DONE -> Apache module applied successfully
+  ansible.builtin.debug:
+    msg: "Apache module applied successfully."
+  tags: [apache, success, success:done]
+
+# Node.js API
+- name: Set up Node.js API module
+  ansible.builtin.include_tasks: node_api.yml
+  tags: [node_api, includes]
+
+- name: DONE -> Node.js API module applied successfully
+  ansible.builtin.debug:
+    msg: "Node.js API module applied successfully."
+  tags: [node_api, success, success:done]
+
+# Caddy
+- name: Configure Caddy as reverse proxy
+  block:
+    - name: Deploy Caddyfile template
+      ansible.builtin.template:
+        src: "caddyfile.j2"
+        dest: "/etc/caddy/Caddyfile"
+        owner: root
+        group: root
+        mode: '0644'
+      notify:
+        - reload_caddy_vm
+        - reload_caddy_codespace
+
+    - name: Enable and start Caddy service (VM)
+      ansible.builtin.systemd:
+        name: caddy
+        enabled: true
+        state: started
+      when: not is_codespace
+
+    - name: Check if Caddy is already running with /etc/caddy/Caddyfile
+      ansible.builtin.shell: "pgrep -af 'caddy.*--config /etc/caddy/Caddyfile' | grep -v pgrep || true"
+      register: caddy_status
+      ignore_errors: true
+      changed_when: false
+      when: is_codespace
+
+    - name: Start caddy service (Codespace)
+      ansible.builtin.command: "caddy start --config /etc/caddy/Caddyfile"
+      when: is_codespace and (caddy_status.stdout | trim == '')
+
+    - name: SUCCESS -> Caddy configured as reverse proxy
+      ansible.builtin.debug:
+        msg: "Caddy is running and the reverse proxy has been successfully configured."
+      tags:
+        - success
+        - success:stage
+
+  tags:
+    - caddy
+    - caddy_proxy
+
+# Auditd
+- name: Set up robertdebock.auditd role
+  block:
+    - name: Merge audit_rules and custom_audit_rules
+      ansible.builtin.set_fact:
+        audit_rules: audit_rules + custom_audit_rules
+      when: custom_audit_rules | length > 0
+
+    - name: Apply Auditd role
+      vars:
+        auditd_start_service: "{{ not is_codespace | default(true) }}"
+      ansible.builtin.include_role:
+        name: robertdebock.auditd
+      register: auditd_result
+
+    - name: Start Auditd service (Codespace)
+      ansible.builtin.command: "service auditd start"
+      changed_when: false
+      when: is_codespace
+    
+    - name: DONE -> Auditd rules applied and service started successfully
+      ansible.builtin.debug:
+        msg: "Auditd rules applied and service started successfully."
+      tags: [success, success:done]
+
+  tags:
+    - auditd

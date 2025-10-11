@@ -1,0 +1,42 @@
+---
+- name: Configure runtime services
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Detect if running inside GitHub Codespaces
+      set_fact:
+        is_codespace: "{{ ansible_env.CODESPACES is defined }}"
+      tags:
+        - always
+        - env_detect
+
+  roles:
+    - role: runtime_setup
+      vars:
+        custom_audit_rules:
+          # Apache
+          - file: /var/www/html
+            permissions: [write, attribute_change]
+            keyname: apache-html-files
+          # Apache logs
+          - file: /var/log/apache2/*-access.log
+            permissions: [write, attribute_change]
+            keyname: apache-access
+          - file: /var/log/apache2/*-error.log
+            permissions: [write, attribute_change]
+            keyname: apache-log
+          # Node.js API
+          - file: /var/www/portfolio/
+            permissions: [write, attribute_change]
+            keyname: portfolio-api-files
+          - file: /var/www/portfolio/.nvm/versions/node/default/bin/node
+            permissions: [execute]
+            keyname: portfolio-binary
+          # Node.js API logs
+          - file: /var/log/portfolio_api/combined.log
+            permissions: [write, attribute_change]
+            keyname: portfolio-access
+          - file: /var/log/portfolio_api/portfolio_api.log
+            permissions: [write, attribute_change]
+            keyname: portfolio-log

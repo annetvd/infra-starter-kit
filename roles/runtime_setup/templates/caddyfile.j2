@@ -1,0 +1,105 @@
+(security_headers) {
+    # Prevents clickjacking attacks
+    header X-Frame-Options "SAMEORIGIN"
+
+    # Prevents browsers from "guessing" the content type (mime sniffing)
+    header X-Content-Type-Options "nosniff"
+
+    # Applies HSTS to enforce HTTPS on future visits
+    header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+    # Controls which resources can be loaded
+    # header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' {{ css_cdn_sources | join(' ') }}; img-src 'self' data:;"
+    # header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self'; report-uri https://{{ web_domain }}/csp_reports;"
+}
+
+(static_caching) {
+    header {
+        # Sets a browser caching policy for static assets, instructing browsers to store 
+        # resources for one year to prevent repeated downloads.
+        if {path} matches "\.(css|jpg|jpeg|png|gif|js|ico)$"
+        Cache-Control "max-age=31536000, public"
+    }
+}
+
+http://{{ web_domain }} {
+    @awococado_uri {
+        path_regexp awococado ^/awococado/(.*)$
+    }
+
+    handle @awococado_uri {
+		# Appending 'permanent' to a redir directive creates a 301 redirect cached by browsers and search engines;
+        # therefore, it is recommended to test the redirect thoroughly before making it permanent.
+        redir https://awococado.{{ web_domain }}/{http.regexp.awococado.1}
+    }
+
+    log {
+		output file {{ caddy_proxy.log_path }}/{{ web_domain }}-access.log
+	}
+
+    # The 'reverse_proxy' directive forwards incoming traffic to a specific service on the configured local port while
+    # managing headers to ensure it receives the original client information instead of the tunnel data.
+	reverse_proxy 127.0.0.1:{{ apache_service.port }} {
+        header_up X-Forwarded-For {header.CF-Connecting-IP}
+        header_up X-Real-IP {header.CF-Connecting-IP}
+        header_up X-Forwarded-Proto {http.request.header.CF-Visitor.scheme}
+        header_up X-Forwarded-Host {http.request.host}
+    }
+	import security_headers
+	import static_caching
+}
+
+http://awococado.{{ web_domain }} {
+    @libraries_uri {
+        path_regexp libraries ^/libraries/(.*)$
+    }
+
+    @css_intro {
+        path /css/introduction.css
+    }
+
+    handle @libraries_uri {
+        redir https://{{ web_domain }}/libraries/{http.regexp.libraries.1}
+    }
+
+    handle @css_intro {
+        redir https://{{ web_domain }}/css/introduction.css
+    }
+
+    # Note: For this setup to work, it is necessary to configure virtual hosts in Apache so that 
+    # it directs each domain/subdomain to its correct path.
+    
+    log {
+		output file {{ caddy_proxy.log_path }}/awococado.{{ web_domain }}-access.log
+	}
+
+	reverse_proxy 127.0.0.1:{{ apache_service.port }} {
+        header_up X-Forwarded-For {header.CF-Connecting-IP}
+        header_up X-Real-IP {header.CF-Connecting-IP}
+        header_up X-Forwarded-Proto {http.request.header.CF-Visitor.scheme}
+        header_up X-Forwarded-Host {http.request.host}
+    }
+	import security_headers
+	import static_caching
+}
+
+http://api.{{ web_domain }} {
+    log {
+        output file {{ caddy_proxy.log_path }}/api.{{ web_domain }}-access.log
+    }
+
+    reverse_proxy 127.0.0.1:{{ portfolio_service.port }} {
+        header_up X-Forwarded-For {header.CF-Connecting-IP}
+        header_up X-Real-IP {header.CF-Connecting-IP}
+        header_up X-Forwarded-Proto {http.request.header.CF-Visitor.scheme}
+        header_up X-Forwarded-Host {http.request.host}
+    }
+    import security_headers
+}
+
+http://{{ web_domain }}/csp_reports {
+    log {
+        output file {{ caddy_proxy.log_path }}/csp_report.log
+    }
+    respond 204
+}

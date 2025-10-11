@@ -163,7 +163,7 @@
 
 - name: Simulate individual logrotate configurations
   block:
-    # Note: This task ignores errors in Codespaces because services like SSH and Auditd rely on syslog, 
+    # Note: This task ignores errors in Codespaces because services like SSH and UFW rely on syslog, 
     # which is unavailable and logs are not generated there. Critical security services are also set without
     # 'missingok' to fail intentionally if issues occur. In production, these settings must never fail.
 

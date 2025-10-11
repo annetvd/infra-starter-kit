@@ -31,7 +31,7 @@
 
     - name: Create the service log directory
       ansible.builtin.file:
-        path: "{{ cloudflared_log_path }}/{{ cloudflare_tunnel_service.name }}/logs"
+        path: "{{ cloudflared_log_path }}/{{ cloudflare_tunnel_service.name }}"
         state: directory
         owner: "{{ cloudflare_tunnel_service.user }}"
         group: "{{ cloudflare_tunnel_service.group }}"
@@ -42,11 +42,11 @@
 
     - name: Ensure log file exists with correct permissions
       ansible.builtin.file:
-        path: "{{ cloudflared_log_path }}/{{ cloudflare_tunnel_service.name }}/logs/cloudflared.log"
+        path: "{{ cloudflared_log_path }}/{{ cloudflare_tunnel_service.name }}/cloudflared.log"
         state: touch
         owner: "{{ cloudflare_tunnel_service.user }}"
         group: "{{ cloudflare_tunnel_service.group }}"
-        mode: '0640'
+        mode: '0600'
       tags:
         - permissions
         - logrotate
@@ -88,8 +88,6 @@
         group: root
         mode: "0440"
         validate: "visudo -cf %s"
-      tags:
-        - service_configuration
 
     - name: Create {{ cloudflare_tunnel_service.name }} systemd service file from template
       ansible.builtin.template:
@@ -98,9 +96,12 @@
         owner: root
         group: root
         mode: '0644'
-      notify: reload_systemd_daemon
-      tags:
-        - service_configuration
+      register: systemd_service_status
+
+    - name: Reload systemd daemon if .service was added or changed (VM)
+      ansible.builtin.systemd:
+        daemon_reload: yes
+      when: not is_codespace and systemd_service_status.changed
 
     - name: Ensure {{ cloudflare_tunnel_service.name }} is running and enabled on boot (VM)
       ansible.builtin.systemd:
@@ -108,8 +109,6 @@
         state: started
         enabled: true
       when: not is_codespace
-      tags:
-        - service_configuration
 
     - name: Verify Cloudflare Tunnel status (Codespace)
       ansible.builtin.command: pgrep -x cloudflared
@@ -118,21 +117,17 @@
       changed_when: false
       when: is_codespace
       tags:
-        - service_configuration
         - verification
 
     - name: Start Cloudflare Tunnel if not running (Codespace)
       ansible.builtin.shell: "nohup {{ cloudflared_binary_path }} tunnel run --token {{ cloudflare_tunnel_token }} &"
       no_log: true
       when: is_codespace and cloudflared_running.rc != 0
-      tags:
-        - service_configuration
 
     - name: SUCCESS -> {{ cloudflare_tunnel_service.name }} created and running
       ansible.builtin.debug:
         msg: "The Cloudflare Tunnel '{{ cloudflare_tunnel_service.name }}' is active."
       tags:
-        - service_configuration
         - verify
         - success
         - success:stage
@@ -142,9 +137,9 @@
       ansible.builtin.fail:
         msg: "An unexpected error occurred while configuring or execution '{{ cloudflare_tunnel_service.name }}'. Check systemd and Cloudflared logs."
       tags:
-        - service_configuration
         - verify
 
   tags:
     - cloudflare_tunnel_service_setup
     - cloudflare_tunnel
+    - service_configuration

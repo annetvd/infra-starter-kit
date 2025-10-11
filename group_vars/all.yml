@@ -6,6 +6,13 @@ php_version: 8.3
 web_domain: example.com
 
 # ====================================================
+# Node.js
+# ====================================================
+node_manager:
+  log_path: /var/log/node
+  prefix: /opt/node
+
+# ====================================================
 # Web services
 # ====================================================
 caddy_proxy:
@@ -14,17 +21,17 @@ caddy_proxy:
   group: caddy
   fail2ban_needs_access: true
   log_path: /var/log/caddy
-  csp_reports_log_path: /var/www/reports/csp_reports
 
 portfolio_service:
   name: portfolio_api
   user: portfolio_api
   group: portfolio_api
   path: /var/www/portfolio
-  main_app_file: app.js
+  main_app_file: src/app.js
   nvm_version: v0.40.3
-  node_version: "lts/*"
+  node_version: 22.20.0
   app_env: production
+  env_path: src/config/.env
   fail2ban_needs_access: true
   port: 3000
   log_path: /var/log/portfolio_api

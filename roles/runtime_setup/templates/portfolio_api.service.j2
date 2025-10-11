@@ -1,0 +1,42 @@
+[Unit]
+Description=Portfolio Node.js Application
+After=network.target
+
+[Service]
+User={{ portfolio_service.user }}
+Group={{ portfolio_service.group }}
+WorkingDirectory={{ portfolio_service.path }}
+
+Environment=NODE_ENV={{ portfolio_service.app_env }}
+EnvironmentFile={{ portfolio_service.path }}/{{ portfolio_service.env_path }}
+# Using the Node binary directly with main_app_file instead of `npm start`
+# to reduce security risks by avoiding the execution of arbitrary npm scripts in package.json.
+ExecStart={{ portfolio_service.path }}/.nvm/versions/node/default/bin/node {{ portfolio_service.path }}/{{ portfolio_service.main_app_file }}
+
+Restart=always
+RestartSec=5s
+
+StandardOutput=append:{{ portfolio_service.log_path }}/{{ portfolio_service.name }}.log
+StandardError=append:{{ portfolio_service.log_path }}/{{ portfolio_service.name }}.log
+
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectHostname=true
+ProcSubset=pid
+ProtectProc=invisible
+
+ReadWritePaths={{ portfolio_service.log_path }}
+ReadOnlyPaths={{ portfolio_service.path }}
+
+PrivateTmp=true
+PrivateDevices=true
+
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictSUIDSGID=true
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

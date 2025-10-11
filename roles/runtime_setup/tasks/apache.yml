@@ -1,0 +1,108 @@
+---
+- name: Set file and folder permissions for Apache Server
+  block:
+    - name: Find directories under Apache service path ({{ apache_service.path }})
+      ansible.builtin.find:
+        paths: "{{ apache_service.path }}"
+        file_type: directory
+        recurse: yes
+      register: apache_found_dirs
+
+    # Note: This task sets directories to read-only (0750), skipping those in apache_writable_rel_paths
+    # which require writable (0770) permissions. Any subdirectories within these paths that also need
+    # write permissions must be explicitly added to the list.
+
+    - name: Ensure directories have correct owner and permissions (read-only)
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        owner: root
+        group: "{{ apache_service.group }}"
+        mode: '0750'
+      loop: "{{ apache_found_dirs.files }}"
+      loop_control:
+        label: "{{ item.path }}"
+      when: >
+        (item.path | regex_replace('^' + apache_service.path + '/', '')) 
+        not in ((apache_writable_rel_paths | default([])) | map(attribute='path') | list)
+
+    - name: Find files under Apache service path ({{ apache_service.path }})
+      ansible.builtin.find:
+        paths: "{{ apache_service.path }}"
+        file_type: file
+        recurse: yes
+      register: apache_found_files
+
+    - name: Ensure files have correct owner and permissions (read-only)
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        owner: root
+        group: "{{ apache_service.group }}"
+        mode: '0640'
+      loop: "{{ apache_found_files.files }}"
+      loop_control:
+        label: "{{ item.path }}"
+
+    - name: Ensure writable directories by Apache
+      ansible.builtin.file:
+        path: "{{ apache_service.path }}/{{ item.path }}"
+        owner: root
+        group: "{{ apache_service.group }}"
+        mode: '0770'
+      loop: "{{ apache_writable_rel_paths | default([]) }}"
+      loop_control:
+        label: "{{ apache_service.path }}/{{ item.path }}"
+
+    - name: SUCCESS -> Apache Server permissions applied successfully
+      ansible.builtin.debug:
+        msg: "Owner and permissions for all files and directories in {{ apache_service.path }} have been applied successfully."
+      tags:
+        - success
+        - success:stage
+
+  tags:
+    - apache
+    - apache_runtime_permissions
+    - runtime_permissions
+
+- name: Apache VirtualHosts Setup for {{ web_domain }}
+  block:
+    - name: Deploy Apache {{ web_domain }} VirtualHosts
+      ansible.builtin.template:
+        src: apache_vhosts.conf.j2
+        dest: "/etc/apache2/sites-available/{{ web_domain }}.conf"
+        owner: root
+        group: root
+        mode: '0644'
+      notify:
+        - reload_apache_vm
+        - reload_apache_codespace
+      tags:
+        - config
+
+    - name: Enable {{ web_domain }} VirtualHosts
+      ansible.builtin.command: a2ensite {{ web_domain }}.conf
+      args:
+        creates: "/etc/apache2/sites-enabled/{{ web_domain }}.conf"
+      notify:
+        - reload_apache_vm
+        - reload_apache_codespace
+      tags:
+        - config
+
+    - name: Test Apache configuration syntax
+      ansible.builtin.command: apachectl configtest
+      changed_when: false
+      tags:
+        - test
+
+    - name: SUCCESS -> Apache VirtualHosts for {{ web_domain }} deployed and enabled successfully
+      ansible.builtin.debug:
+        msg: "Apache VirtualHosts for {{ web_domain }} have been deployed and enabled successfully."
+      tags:
+        - success
+        - success:stage
+        - config
+        - test
+  tags:
+    - apache
+    - apache_virtualhost

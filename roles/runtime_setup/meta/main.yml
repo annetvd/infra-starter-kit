@@ -1,0 +1,30 @@
+---
+galaxy_info:
+  author: Annet Vargas Dueñas
+  description: >
+    Role to finalize the runtime setup of personal projects on a production server.
+    Depends on the security role, which installs and configures the base services.
+    This role configures services such as the Node.js API, Apache, and Caddy as a reverse proxy,
+    and sets up auditd rules for the system and services managed by the security role.
+    Service files are not provisioned by this role and must be deployed separately, allowing flexibility
+    to use different deployment methods according to project-specific needs.
+    It focuses on runtime initialization and service orchestration rather than installation.
+    Intended for personal use; functional but in testing, not guaranteed to be production-ready.
+  license: MIT
+  min_ansible_version: 2.13
+  platforms:
+    - name: Ubuntu
+      versions:
+        - 22.04
+  galaxy_tags:
+    - system
+    - security
+    - baseline
+    - monitoring
+    - web
+    - infrastructure
+    - logging
+    - nodejs
+
+dependencies:
+  - robertdebock.bootstrap

@@ -1,0 +1,105 @@
+---
+- name: Set Node API permissions for files and folders
+  block:
+    - name: Find directories under Node.js service path ({{ portfolio_service.path }})
+      ansible.builtin.find:
+        paths: "{{ portfolio_service.path }}"
+        file_type: directory
+        recurse: yes
+      register: node_found_dirs
+
+    - name: Filter out .nvm directory and subdirectories
+      set_fact:
+        node_found_dirs: '{{ node_found_dirs.files | rejectattr("path", "search", "/\.nvm/") | list }}'
+
+    - name: Ensure directories have correct owner and permissions (read-only)
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        owner: "{{ portfolio_service.user }}"
+        group: "{{ portfolio_service.group }}"
+        mode: '0500'
+      loop: "{{ node_found_dirs }}"
+      loop_control:
+        label: "{{ item.path }}"
+
+    - name: Find files under Node.js service path ({{ portfolio_service.path }})
+      ansible.builtin.find:
+        paths: "{{ portfolio_service.path }}"
+        file_type: file
+        recurse: yes
+      register: node_found_files
+
+    - name: Exclude files inside .nvm
+      set_fact:
+        node_found_files: '{{ node_found_files.files | rejectattr("path", "search", "/\.nvm/") | list }}'
+
+    - name: Ensure files have correct owner and permissions (read-only)
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        owner: "{{ portfolio_service.user }}"
+        group: "{{ portfolio_service.group }}"
+        mode: '0400'
+      loop: "{{ node_found_files }}"
+      loop_control:
+        label: "{{ item.path }}"
+
+    - name: Ensure Node binary have correct owner and permissions
+      ansible.builtin.file:
+        path: "{{ portfolio_service.path }}/.nvm/versions/node/default/bin/node"
+        owner: "{{ portfolio_service.user }}"
+        group: "{{ portfolio_service.group }}"
+        mode: '0500'
+
+    - name: SUCCESS -> {{ portfolio_service.name }} permissions applied successfully
+      ansible.builtin.debug:
+        msg: "Owner and permissions for all files and directories in {{ portfolio_service.path }} have been applied successfully."
+      tags:
+        - success
+        - success:stage
+
+  tags:
+    - node_api
+    - node_runtime_permissions
+    - runtime_permissions
+
+- name: Configure and start {{ portfolio_service.name }} service
+  block:
+    - name: Create {{ portfolio_service.name }} systemd service file from template
+      ansible.builtin.template:
+        src: "portfolio_api.service.j2"
+        dest: "/etc/systemd/system/{{ portfolio_service.name }}.service"
+        owner: root
+        group: root
+        mode: '0644'
+      register: systemd_service_status
+
+    - name: Reload systemd daemon if .service was added or changed (VM)
+      ansible.builtin.systemd:
+        daemon_reload: yes
+      when: not is_codespace and systemd_service_status.changed
+
+    - name: Ensure {{ portfolio_service.name }} is running and enabled on boot (VM)
+      ansible.builtin.systemd:
+        name: "{{ portfolio_service.name }}.service"
+        state: started
+        enabled: true
+      when: not is_codespace
+
+    - name: Start {{ portfolio_service.name }} service (Codespace)
+      ansible.builtin.shell: |
+        nohup {{ portfolio_service.path }}/.nvm/versions/node/default/bin/node \
+          {{ portfolio_service.path }}/{{ portfolio_service.main_app_file }} &
+      changed_when: false
+      when: is_codespace
+
+    - name: SUCCESS -> {{ portfolio_service.name }} service was added and started successfully
+      ansible.builtin.debug:
+        msg: "The '{{ portfolio_service.name }}' service is active and running."
+      tags:
+        - success
+        - success:stage
+
+  tags:
+    - node_api_service_setup
+    - node_api
+    - service_configuration

@@ -1,13 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
-log_file="{{ portfolio_service.log_path }}/logs_update/node_update.log"
+log_file="{{ node_manager.log_path }}/{{ portfolio_service.name }}/node_update.log"
 
 # Ensure log file exists and has correct permissions
 if [ ! -f "$log_file" ]; then
   touch "$log_file"
   chmod 0600 "$log_file"
-  chown "{{ portfolio_service.user }}:{{ portfolio_service.group }}" "$log_file"
+  chown "root:root" "$log_file"
 fi
 
 echo "$(date -Is) Starting Node.js update script" >> "$log_file" 2>&1
@@ -27,21 +27,45 @@ echo "$(date -Is) Current Node version before update: ${before:-none}" >> "$log_
 
 # Install the latest version of the specified branch as root
 echo "$(date -Is) Installing Node LTS 'Iron'" >> "$log_file" 2>&1
-nvm install lts/iron --reinstall-packages-from="${before:-default}" >> "$log_file" 2>&1
-nvm alias default lts/iron >> "$log_file" 2>&1
-nvm use default >> "$log_file" 2>&1
+install_output=$(mktemp)
+trap 'rm -f "$install_output"' EXIT
 
-# Ensure NVM directory and its contents are owned by the node_api user and group
-chown -R {{ portfolio_service.user }}:{{ portfolio_service.group }} "$NVM_DIR" >> "$log_file" 2>&1
+if ! nvm install lts/iron --reinstall-packages-from="${before:-default}" >"$install_output" 2>&1; then
+  if grep -q "You can't reinstall global packages from the same version" "$install_output"; then
+    echo "$(date -Is) Node LTS 'Iron' already installed, no action needed." >> "$log_file" 2>&1
+    echo "$(date -Is) Node.js update script finished" >> "$log_file" 2>&1
+    exit 0
+  else
+    echo "$(date -Is) ERROR: Node installation failed. Output:" >> "$log_file" 2>&1
+    cat "$install_output" >> "$log_file" 2>&1
+    exit 1
+  fi
+fi
+
+cat "$install_output" >> "$log_file" 2>&1
 
 after="$(nvm current || true)"
 echo "$(date -Is) Current Node version after update: ${after:-unknown}" >> "$log_file" 2>&1
 
 if [ "${before:-}" != "${after:-}" ]; then
+  new_version_path="$NVM_DIR/versions/node/$after"
+  default_path="$NVM_DIR/versions/node/default"
+
+  nvm alias default lts/iron >> "$log_file" 2>&1
+  nvm use default >> "$log_file" 2>&1
+
+  # Remove the existing "default" symlink if it exists
+  [ -L "$default_path" ] && rm "$default_path" >> "$log_file" 2>&1
+
+  # Create a new default symlink
+  ln -s "$new_version_path" "$default_path" >> "$log_file" 2>&1
+
+  # Ensure NVM directory and its contents are owned by the node_api user and group
+  chown -R {{ portfolio_service.user }}:{{ portfolio_service.group }} "$NVM_DIR" >> "$log_file" 2>&1
+  chmod 500 "$default_path/bin/node" >> "$log_file" 2>&1
+
   echo "$(date -Is) Node updated: ${before:-none} -> ${after:-unknown}. Restarting {{ portfolio_service.name }}.service" >> "$log_file" 2>&1
   /bin/systemctl restart "{{ portfolio_service.name }}.service" >> "$log_file" 2>&1
-else
-  echo "$(date -Is) Node is already at ${after:-unknown}. Service will not be restarted." >> "$log_file" 2>&1
 fi
 
 echo "$(date -Is) Node.js update script finished" >> "$log_file" 2>&1

@@ -97,6 +97,7 @@
         msg: "Fail2Ban jails were successfully configured and activated."
       tags:
         - verification
+        - mail_test
         - test
         - success
         - success:stage
@@ -109,7 +110,6 @@
         - (jail_count | int | default(0)) != fail2ban_jails_count
       tags:
         - verification
-        - test
 
     - name: ERROR -> Failed to send test email via Fail2Ban ssh jail
       ansible.builtin.fail:
@@ -119,22 +119,13 @@
       tags:
         - verification
         - test
-
-    - name: ERROR -> Verification email not found in /var/mail/codespace
-      ansible.builtin.fail:
-        msg: "The verification email was not found in /var/mail/codespace."
-      when: 
-        - (mail_check.rc | default(0)) != 0
-      tags:
-        - verification
-        - test
+        - mail_test
 
     - name: ERROR -> Failed to apply fail2ban security configuration
       ansible.builtin.fail:
         msg: "An unexpected error occurred while applying fail2ban security configuration. Check the logs before proceeding."
       tags:
         - verification
-        - test
 
   tags:
     - fail2ban_jails

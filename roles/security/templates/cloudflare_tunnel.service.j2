@@ -16,23 +16,22 @@ ExecStart=/usr/bin/sudo -u {{ cloudflare_tunnel_service.user }} {{ cloudflared_b
 Restart=always
 RestartSec=5s
 
-StandardOutput=append:{{ cloudflared_log_path }}/{{ cloudflare_tunnel_service.name }}/logs/cloudflared.log
-StandardError=append:{{ cloudflared_log_path }}/{{ cloudflare_tunnel_service.name }}/logs/cloudflared.log
+StandardOutput=append:{{ cloudflared_log_path }}/{{ cloudflare_tunnel_service.name }}/cloudflared.log
+StandardError=append:{{ cloudflared_log_path }}/{{ cloudflare_tunnel_service.name }}/cloudflared.log
 
 # Security hardening
 NoNewPrivileges=true
 ProtectHome=true
 ProtectSystem=full
 PrivateTmp=true
-ProtectKernelModules=true
-ReadWritePaths={{ cloudflared_path }}/{{ cloudflare_tunnel_service.name }} {{ cloudflared_log_path }}/{{ cloudflare_tunnel_service.name }}/logs
-ProtectClock=true
+ReadWritePaths={{ cloudflared_log_path }}/{{ cloudflare_tunnel_service.name }}
+ReadOnlyPaths={{ cloudflared_path }}/{{ cloudflare_tunnel_service.name }}
 ProtectHostname=true
 PrivateDevices=true
 RestrictAddressFamilies=AF_INET AF_INET6
 RestrictSUIDSGID=true
 CapabilityBoundingSet=
-AmbientCapabilities=   
+AmbientCapabilities=
 
 [Install]
 WantedBy=multi-user.target

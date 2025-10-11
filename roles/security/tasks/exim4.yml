@@ -1,0 +1,156 @@
+# Note: This Exim4 configuration is designed exclusively for sending emails using
+# an external SMTP account with an app password. With this setup, system services
+# such as Fail2Ban or cron can send automated notifications via email, and PHP’s
+# mail() function can also deliver outgoing messages when no local MTA is configured.
+---
+- name: Install and start Exim4
+  block:
+    - name: Install Exim4 and mailutils
+      ansible.builtin.apt:
+        name: "{{ item }}"
+        state: present
+        update_cache: true
+      loop:
+        - exim4
+        - mailutils
+      tags:
+        - install
+
+    - name: Enable and start service (VM)
+      ansible.builtin.systemd:
+        name: exim4
+        enabled: true
+        state: started
+      when: not is_codespace
+
+    - name: Start Exim4 service (Codespace)
+      ansible.builtin.command: "service exim4 start"
+      when: is_codespace
+      changed_when: false
+
+    - name: SUCCESS -> Exim4 installed and running
+      ansible.builtin.debug:
+        msg: "Exim4 and mailutils installed successfully, service is running."
+      tags:
+        - install
+        - success
+        - success:stage
+
+  rescue:
+    - name: ERROR -> Exim4 installation or start failed
+      ansible.builtin.fail:
+        msg: "Installation or startup of Exim4 failed. Check apt logs and systemd status."
+      tags:
+        - install
+
+  tags:
+    - exim4
+
+- name: Configure Exim4 and Relay
+  block:
+    - name: Ensure 127.0.1.1 maps to {{ system_mailname }} in /etc/hosts
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.1\.1'
+        line: "127.0.1.1 {{ system_mailname }}.localdomain {{ system_mailname }} localhost"
+        insertafter: '^127\.0\.0\.1\s+localhost'
+        backup: true
+        unsafe_writes: true
+      tags:
+        - mailname
+
+    - name: Configure update-exim4.conf.conf file
+      ansible.builtin.copy:
+        dest: /etc/exim4/update-exim4.conf.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          dc_local_interfaces='127.0.0.1 ; ::1'
+          dc_relay_domains=''
+          dc_relay_nets=''
+          CFILEMODE='644'
+          dc_use_split_config='false'
+          dc_mailname_in_oh='true'
+
+          # --- Custom relay settings ---
+          dc_eximconfig_configtype='smarthost'
+          dc_other_hostnames=''
+          dc_smarthost='{{ smtp_host }}::{{ smtp_port }}'
+          dc_readhost='{{ mail_from_domain }}'
+          dc_minimaldns='true'
+          dc_hide_mailname='true'
+          dc_localdelivery='mail_spool'
+      notify:
+        - rebuild_exim4_configuration
+        - reload_exim4_vm
+        - reload_exim4_codespace
+      tags:
+        - relay_settings
+
+    - name: Create /etc/exim4/passwd.client
+      ansible.builtin.copy:
+        dest: /etc/exim4/passwd.client
+        content: |
+          {{ smtp_host }}:{{ email_user }}:{{ email_app_password }}
+        owner: Debian-exim
+        group: Debian-exim
+        mode: '0600'
+      notify:
+        - rebuild_exim4_configuration
+        - reload_exim4_vm
+        - reload_exim4_codespace
+      tags:
+        - relay_settings
+
+    - name: Configure /etc/mailname
+      ansible.builtin.copy:
+        dest: /etc/mailname
+        content: "{{ system_mailname }}\n"
+        owner: root
+        group: root
+        mode: '0644'
+      tags:
+        - mailname
+
+    - name: SUCCESS -> Exim4 configured
+      ansible.builtin.debug:
+        msg: "Exim4 configuration applied successfully. Relay settings ready."
+      tags:
+        - mailname
+        - relay_settings
+
+  rescue:
+    - name: ERROR -> Exim4 configuration failed
+      ansible.builtin.fail:
+        msg: "Exim4 configuration or relay setup failed. Check /etc/exim4/ and hosts file."
+      tags:
+        - mailname
+        - relay_settings
+
+  tags:
+    - exim4
+
+- name: Test Exim4 configuration
+  block:
+    - name: Force restart Exim4 before mail test
+      ansible.builtin.meta: flush_handlers
+
+    - name: Send test email
+      ansible.builtin.shell: |
+        echo "This is a test email sent to verify the Exim4 relay configuration." \
+        | mail -s "Exim4 Test Email" {{ security_email }}
+
+    - name: SUCCESS -> Test email sent
+      ansible.builtin.debug:
+        msg: "Test email sent successfully to {{ security_email }}."
+      
+  rescue:
+    - name: ERROR -> Test email failed
+      ansible.builtin.fail:
+        msg: "Failed to send test email. Verify SMTP relay credentials and connectivity."
+
+  tags:
+    - test
+    - mail_test
+    - exim4
